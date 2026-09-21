@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/spend-guard/decision.schema.json",
+  "title": "Shadow decision (chapter 7)",
+  "type": "object",
+  "required": ["schema_version", "decision_id", "candidate_id", "mode", "decision", "reason_codes",
+               "deterministic_checks", "semantic_judgments", "policy", "input_hash", "created_at", "latency_ms"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1"},
+    "decision_id": {"type": "string"},
+    "candidate_id": {"type": "string"},
+    "request_id": {"type": ["string", "null"]},
+    "mode": {"const": "shadow"},
+    "decision": {"enum": ["PAY", "HOLD", "REVIEW"]},
+    "reason_codes": {"type": "array", "items": {"type": "string"}},
+    "deterministic_checks": {
+      "type": "object",
+      "description": "Observed facts from code-owned checks. Never blended with the semantic scores.",
+      "required": ["status", "failed", "missing_fields", "signals"],
+      "properties": {
+        "status": {"enum": ["PASS", "FAIL"]},
+        "failed": {"type": "array", "items": {"type": "string"}},
+        "missing_fields": {"type": "array", "items": {"type": "string"}},
+        "signals": {
+          "type": "array",
+          "items": {"enum": ["RETRY_OBSERVED", "DUPLICATE_REQUEST_ID", "EXACT_REPURCHASE"]}
+        }
+      }
+    },
+    "semantic_judgments": {
+      "type": "object",
+      "description": "Jev's answers, stored before aggregation so replay can re-decide offline.",
+      "required": ["status", "model", "confidence", "usage"],
+      "properties": {
+        "status": {"enum": ["OK", "SKIPPED", "PROVIDER_ERROR", "INVALID_RESPONSE", "TIMEOUT"]},
+        "model": {"type": ["string", "null"]},
+        "task_fit": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "incremental_value": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "duplication_risk": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "evidence_sufficiency": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "confidence": {
+          "type": "object",
+          "description": "One confidence per question. There is deliberately no single blended confidence: a combined number would read as a trade-safety score.",
+          "additionalProperties": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+        },
+        "usage": {
+          "type": "object",
+          "properties": {
+            "input_tokens": {"type": ["integer", "null"]},
+            "output_tokens": {"type": ["integer", "null"]},
+            "cost_usd": {"type": ["number", "null"], "description": "Null unless a unit price is configured, with its source recorded in the policy."}
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["policy_version", "thresholds"],
+      "properties": {
+        "policy_version": {"type": "string"},
+        "thresholds": {"type": "object", "additionalProperties": {"type": "number"}},
+        "exact_repurchase_window": {"type": "string"}
+      }
+    },
+    "input_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "latency_ms": {"type": "integer", "minimum": 0}
+  }
+}

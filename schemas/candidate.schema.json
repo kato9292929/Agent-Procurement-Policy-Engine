@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/spend-guard/candidate.schema.json",
+  "title": "Purchase candidate (chapter 5)",
+  "description": "What the host purchase flow hands the guard. Values the host cannot supply must be null, never invented; every null lands in the decision's missing_fields.",
+  "type": "object",
+  "required": ["schema_version", "candidate_id", "request_id", "observed_at", "task", "service", "quote"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"const": "1"},
+    "candidate_id": {"type": "string"},
+    "request_id": {"type": ["string", "null"]},
+    "idempotency_key": {
+      "type": ["string", "null"],
+      "description": "Set by the host flow. A reappearing request_id with a matching key is a retry; without one it is treated as a possible double spend."
+    },
+    "retry_of": {"type": ["string", "null"], "description": "Explicit retry marker, if the host sets one."},
+    "observed_at": {"type": ["string", "null"], "format": "date-time"},
+    "task": {
+      "type": "object",
+      "properties": {
+        "purpose": {
+          "type": ["string", "null"],
+          "description": "Normalised to the purchase's purpose. Do not paste raw conversation history."
+        },
+        "required_data": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "provider_id": {"type": ["string", "null"]},
+        "service_id": {"type": ["string", "null"]},
+        "route_id": {"type": ["string", "null"]},
+        "access_method": {"type": ["string", "null"]},
+        "description": {"type": ["string", "null"]},
+        "request_params_hash": {
+          "type": ["string", "null"],
+          "description": "Hash of the normalised request parameters. Must not include credentials or signatures."
+        }
+      }
+    },
+    "quote": {
+      "type": "object",
+      "properties": {
+        "amount": {"type": ["string", "null"], "description": "Decimal string. Never a binary float."},
+        "currency": {"type": ["string", "null"]},
+        "network": {"type": ["string", "null"]}
+      }
+    },
+    "prior_acquisitions": {
+      "type": "array",
+      "description": "Snapshot as of observation. Frozen then, so an asynchronous evaluation cannot see this purchase among its own priors.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "provider_id": {"type": ["string", "null"]},
+          "service_id": {"type": ["string", "null"]},
+          "route_id": {"type": ["string", "null"]},
+          "request_params_hash": {"type": ["string", "null"]},
+          "content_fingerprint": {"type": ["string", "null"]},
+          "summary": {"type": ["string", "null"], "description": "Short description of what was acquired. No raw or confidential content."},
+          "acquired_at": {"type": ["string", "null"], "format": "date-time"}
+        }
+      }
+    }
+  }
+}

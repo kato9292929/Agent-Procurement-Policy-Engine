@@ -1,0 +1,80 @@
+{
+  "policy_version": "shadow-v1",
+  "counts": {
+    "PAY": 1,
+    "HOLD": 3,
+    "REVIEW": 5
+  },
+  "diff": {
+    "total": 9,
+    "changed": 0,
+    "transitions": {},
+    "details": []
+  },
+  "decisions": {
+    "dec_18a1ed38b63e45cf8d9658a1": {
+      "decision": "PAY",
+      "reason_codes": [
+        "TASK_MATCH",
+        "INCREMENTAL_VALUE",
+        "NOT_DUPLICATE",
+        "EVIDENCE_SUFFICIENT"
+      ]
+    },
+    "dec_6a76621433a04090965f6a7a": {
+      "decision": "HOLD",
+      "reason_codes": [
+        "DUPLICATION_RISK",
+        "NO_INCREMENTAL_VALUE"
+      ]
+    },
+    "dec_c955f3c3906d47e598ef4235": {
+      "decision": "HOLD",
+      "reason_codes": [
+        "EXACT_REPURCHASE",
+        "DUPLICATION_RISK",
+        "NO_INCREMENTAL_VALUE"
+      ]
+    },
+    "dec_ee6e786036a34f82a35e929b": {
+      "decision": "HOLD",
+      "reason_codes": [
+        "TASK_MISMATCH",
+        "NO_INCREMENTAL_VALUE"
+      ]
+    },
+    "dec_029da0a9d9904730ae1c816b": {
+      "decision": "REVIEW",
+      "reason_codes": [
+        "MISSING_REQUIRED_FIELDS"
+      ]
+    },
+    "dec_3179ff63fdc648acb5831eab": {
+      "decision": "REVIEW",
+      "reason_codes": [
+        "LOW_CONFIDENCE_TASK_FIT",
+        "LOW_CONFIDENCE_INCREMENTAL_VALUE",
+        "TASK_MISMATCH",
+        "NO_INCREMENTAL_VALUE"
+      ]
+    },
+    "dec_47a4077a6f734a45b41ebd02": {
+      "decision": "REVIEW",
+      "reason_codes": [
+        "EVIDENCE_INSUFFICIENT"
+      ]
+    },
+    "dec_716887578a724070a3b545b1": {
+      "decision": "REVIEW",
+      "reason_codes": [
+        "TIMEOUT"
+      ]
+    },
+    "dec_7d1389dbfb784f47bfb09435": {
+      "decision": "REVIEW",
+      "reason_codes": [
+        "INVALID_RESPONSE"
+      ]
+    }
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "schema_version": "1",
+  "decisions": {
+    "candidates_observed": 9,
+    "repeat_observations": 0,
+    "evaluated": 9,
+    "counts": {
+      "PAY": 1,
+      "HOLD": 3,
+      "REVIEW": 5
+    },
+    "rates": {
+      "PAY": 0.1111,
+      "HOLD": 0.3333,
+      "REVIEW": 0.5556
+    },
+    "review_reasons": {
+      "MISSING_REQUIRED_FIELDS": 1,
+      "LOW_CONFIDENCE_TASK_FIT": 1,
+      "LOW_CONFIDENCE_INCREMENTAL_VALUE": 1,
+      "TASK_MISMATCH": 1,
+      "NO_INCREMENTAL_VALUE": 1,
+      "EVIDENCE_INSUFFICIENT": 1,
+      "TIMEOUT": 1,
+      "INVALID_RESPONSE": 1
+    },
+    "signals": {
+      "DUPLICATE_REQUEST_ID": 0,
+      "EXACT_REPURCHASE": 1
+    },
+    "deterministic_vs_semantic_disagreements": 0
+  },
+  "human_comparison": {
+    "purchases_succeeded": 9,
+    "feedback_coverage": 0.5556,
+    "labelled": 5,
+    "not_needed_held": 1.0,
+    "needed_held": 0.0,
+    "labelled_reviewed": 0.2
+  },
+  "cost_and_performance": {
+    "judgment_cost_usd": null,
+    "input_tokens": null,
+    "output_tokens": null,
+    "decision_latency_ms": {
+      "p50": 0.0,
+      "p95": 0.0
+    },
+    "hook_overhead_ms": {
+      "p50": 0.231,
+      "p95": 0.687
+    },
+    "provider_error_rate": 0.2222,
+    "missing_input_rate": 0.1111,
+    "ledger_write_failures": null
+  },
+  "notes": [
+    "ledger_write_failures is not derivable from the ledger itself; it comes from the host's own log (see chapter 6 fail-open behaviour).",
+    "Savings alone is not a success metric: read needed_held together with counts before changing a threshold."
+  ],
+  "score_distribution": {
+    "scores": {
+      "task_fit": {
+        "n": 6,
+        "min": 0.04,
+        "p50": 0.88,
+        "max": 0.94
+      },
+      "incremental_value": {
+        "n": 6,
+        "min": 0.12,
+        "p50": 0.66,
+        "max": 0.87
+      },
+      "duplication_risk": {
+        "n": 6,
+        "min": 0.03,
+        "p50": 0.28,
+        "max": 0.93
+      },
+      "evidence_sufficiency": {
+        "n": 6,
+        "min": 0.31,
+        "p50": 0.86,
+        "max": 0.91
+      }
+    },
+    "confidence": {
+      "task_fit": {
+        "n": 6,
+        "min": 0.41,
+        "p50": 0.92,
+        "max": 0.94
+      },
+      "incremental_value": {
+        "n": 6,
+        "min": 0.55,
+        "p50": 0.9,
+        "max": 0.94
+      },
+      "duplication_risk": {
+        "n": 6,
+        "min": 0.83,
+        "p50": 0.9,
+        "max": 0.94
+      },
+      "evidence_sufficiency": {
+        "n": 6,
+        "min": 0.8,
+        "p50": 0.9,
+        "max": 0.94
+      }
+    }
+  },
+  "chain_problems": []
+}

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spend-guard"
+version = "0.1.0"
+description = "x402 Spend Guard - shadow-mode purchase policy engine"
+readme = "README.md"
+requires-python = ">=3.11"
+keywords = ["x402", "agent", "procurement", "policy", "jev", "shadow-mode"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Quality Assurance",
+]
+# The runtime is dependency-free on purpose: a guard that sits next to a
+# payment path must not be able to break it by pulling in a conflicting package.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["jsonschema>=4"]
+
+[project.scripts]
+guard = "spend_guard.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
