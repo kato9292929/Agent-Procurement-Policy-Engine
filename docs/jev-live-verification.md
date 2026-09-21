@@ -11,12 +11,40 @@ The test suite that checks these assumptions exists and is ready to run. Until
 someone runs it with a key, treat this page as *what the code believes*, not
 as verified behaviour.
 
-## Running it
+## Getting the credential to the tests
+
+Two routes. In a sandboxed environment, **prefer the proxy route**: the key
+never enters the sandbox, so nothing running there can read or leak it.
+
+### A. An outbound proxy attaches it (preferred)
+
+```bash
+export SPEND_GUARD_JEV_AUTH=proxy
+python3 -m pytest tests/live -m live -q -s
+```
+
+The request goes out with **no `Authorization` header of its own**; the proxy
+adds the credential after it leaves. This process never holds the key.
+
+In a Claude Code cloud environment this is the **API credentials** feature
+(Pro and Max plans). Registering `api.typesafe.ai` there also grants network
+access to that host, which the environment's network policy blocks by default
+— so this route solves reachability and secrecy in one step.
+
+`test_a_bad_key_is_a_provider_error` skips in this mode, because the process
+cannot choose which credential is sent.
+
+### B. This process holds the key
 
 ```bash
 export TYPESAFE_API_KEY='...'
 python3 -m pytest tests/live -m live -q -s
 ```
+
+The adapter reads `TYPESAFE_API_KEY`, or `~/.config/typesafe/credentials.env`
+(keep it mode `600`). The host must also be reachable: in a Claude Code cloud
+environment that means **Custom** network access with `api.typesafe.ai` in the
+allowed domains, since **Trusted** does not include it.
 
 - Excluded from the default run by `addopts = -m "not live"` in `pytest.ini`,
   so `pytest -q` never calls the API.

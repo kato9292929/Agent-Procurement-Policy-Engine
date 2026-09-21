@@ -43,10 +43,23 @@ def budget() -> CallBudget:
 
 
 @pytest.fixture(scope="session")
-def api_key() -> str:
+def api_key() -> str | None:
+    """The key, or None when an outbound proxy attaches it instead.
+
+    Two ways to reach Jev from a sandbox:
+
+    * `TYPESAFE_API_KEY` - this process holds the key and sets the header.
+    * `SPEND_GUARD_JEV_AUTH=proxy` - a proxy attaches the credential after the
+      request leaves, so the key never enters the sandbox at all. Preferred:
+      nothing running here can read it.
+    """
+    from spend_guard.judges.jev import AUTH_PROXY, auth_mode
+
+    if auth_mode() == AUTH_PROXY:
+        return None
     key = os.environ.get("TYPESAFE_API_KEY")
     if not key:
-        pytest.skip("TYPESAFE_API_KEY is not set")
+        pytest.skip("set TYPESAFE_API_KEY, or SPEND_GUARD_JEV_AUTH=proxy to let a proxy attach it")
     return key
 
 

@@ -38,6 +38,20 @@ from .base import QUESTION_SPECS
 DEFAULT_URL = "https://api.typesafe.ai/v1/systemone"
 DEFAULT_MODEL = "jev-latest"
 
+# When the credential is attached by an outbound proxy rather than held by this
+# process, the request must go out WITHOUT an Authorization header of its own:
+# the proxy adds it after the request leaves. Set SPEND_GUARD_JEV_AUTH=proxy.
+# This is how a Claude Code cloud environment's "API credentials" work, and it
+# is strictly better than holding the key here - the key never enters the
+# sandbox at all, so nothing running in it can read or leak the key.
+AUTH_PROXY = "proxy"
+AUTH_KEY = "key"
+
+
+def auth_mode(env: Mapping[str, str] | None = None) -> str:
+    environ = os.environ if env is None else env
+    return AUTH_PROXY if environ.get("SPEND_GUARD_JEV_AUTH") == AUTH_PROXY else AUTH_KEY
+
 Transport = Callable[[urllib.request.Request, float], bytes]
 
 # Exactly what may be sent. Anything not named here stays on this machine:
@@ -202,11 +216,13 @@ class JevProcurementJudge:
         url: str | None = None,
         transport: Transport | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        auth: str | None = None,
     ):
         self.api_key = api_key
         self.url = url or os.environ.get("SPEND_GUARD_JEV_URL") or DEFAULT_URL
         self.transport = transport or _default_transport
         self.sleep = sleep
+        self.auth = auth or auth_mode()
 
     def evaluate(self, candidate: Candidate, policy: Policy) -> SemanticJudgment:
         settings = policy.jev or {}
@@ -219,13 +235,10 @@ class JevProcurementJudge:
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
-        key = self.api_key or load_api_key()
-        request = urllib.request.Request(
-            self.url,
-            data=payload,
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            method="POST",
-        )
+        headers = {"Content-Type": "application/json"}
+        if self.auth != AUTH_PROXY:
+            headers["Authorization"] = f"Bearer {self.api_key or load_api_key()}"
+        request = urllib.request.Request(self.url, data=payload, headers=headers, method="POST")
 
         for attempt in range(retries + 1):
             try:

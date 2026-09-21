@@ -179,6 +179,8 @@ def test_report_latency_and_record_the_response_shape(live_run):
 
 
 def test_a_bad_key_is_a_provider_error(api_key, budget):
+    if api_key is None:
+        pytest.skip("in proxy auth mode this process cannot choose the credential")
     budget.spend()
     judge = JevProcurementJudge(api_key="sk-definitely-not-a-valid-key", sleep=lambda _: None)
     policy = support.policy(jev={"model": "jev-latest", "timeout_ms": 20000, "retries": 0})
