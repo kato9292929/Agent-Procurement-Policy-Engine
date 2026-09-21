@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/spend-guard/ledger-event.schema.json",
+  "title": "Ledger event (chapter 9)",
+  "description": "One JSONL line. Events are appended, never updated; a later fact about a decision is a new event carrying the same decision_id.",
+  "type": "object",
+  "required": ["event_id", "event_type", "schema_version", "decision_id", "candidate_id",
+               "request_id", "occurred_at", "payload", "previous_event_hash", "event_hash"],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {"type": "string"},
+    "event_type": {
+      "enum": ["candidate_observed", "guard_evaluated", "purchase_attempted",
+               "purchase_result", "delivery_observed", "human_feedback"]
+    },
+    "schema_version": {"const": "1"},
+    "decision_id": {"type": "string"},
+    "candidate_id": {"type": "string"},
+    "request_id": {"type": ["string", "null"]},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "payload": {
+      "type": "object",
+      "description": "Secret-looking keys are replaced with [redacted] on the way in. No API keys, signatures, Authorization headers or wallet secrets."
+    },
+    "previous_event_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "The preceding event's event_hash; sha256:000...0 for the first event."
+    },
+    "event_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "RFC 8785 canonical form of this event without event_hash, then SHA-256."
+    }
+  }
+}

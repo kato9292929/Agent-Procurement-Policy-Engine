@@ -1,0 +1,13 @@
+{
+  "_comment": "Recorded Jev answers keyed by candidate_id. These numbers are INVENTED to exercise each aggregation rule; they are not sampled from the model and must never be used to choose a threshold (see docs/design.md).",
+  "cand_pay_clean":        {"task_fit": 0.94, "incremental_value": 0.87, "duplication_risk": 0.11, "evidence_sufficiency": 0.91, "confidence": {"task_fit": 0.93, "incremental_value": 0.82, "duplication_risk": 0.90, "evidence_sufficiency": 0.88}, "usage": {"input_tokens": 850, "output_tokens": 120}},
+  "cand_semantic_dupe":    {"task_fit": 0.88, "incremental_value": 0.21, "duplication_risk": 0.84, "evidence_sufficiency": 0.86, "confidence": 0.90, "usage": {"input_tokens": 820, "output_tokens": 110}},
+  "cand_exact_repurchase": {"task_fit": 0.91, "incremental_value": 0.12, "duplication_risk": 0.93, "evidence_sufficiency": 0.89, "confidence": 0.92, "usage": {"input_tokens": 800, "output_tokens": 100}},
+  "cand_off_task":         {"task_fit": 0.04, "incremental_value": 0.62, "duplication_risk": 0.03, "evidence_sufficiency": 0.85, "confidence": 0.94, "usage": {"input_tokens": 700, "output_tokens": 90}},
+  "cand_low_confidence":   {"task_fit": 0.72, "incremental_value": 0.66, "duplication_risk": 0.28, "evidence_sufficiency": 0.75, "confidence": {"task_fit": 0.41, "incremental_value": 0.55, "duplication_risk": 0.83, "evidence_sufficiency": 0.80}, "usage": {"input_tokens": 780, "output_tokens": 105}},
+  "cand_thin_evidence":    {"task_fit": 0.83, "incremental_value": 0.78, "duplication_risk": 0.12, "evidence_sufficiency": 0.31, "confidence": 0.88, "usage": {"input_tokens": 640, "output_tokens": 95}},
+  "cand_jev_timeout":      {"fail": "TIMEOUT"},
+  "cand_jev_invalid":      {"fail": "INVALID_RESPONSE"},
+  "cand_provider_down":    {"fail": "PROVIDER_ERROR"},
+  "_default":              {"task_fit": 0.90, "incremental_value": 0.80, "duplication_risk": 0.10, "evidence_sufficiency": 0.85, "confidence": 0.90, "usage": {"input_tokens": 500, "output_tokens": 80}}
+}

@@ -1,0 +1,34 @@
+{
+  "policy_version": "shadow-v1",
+  "provisional": true,
+  "_provisional_note": "These thresholds are PROVISIONAL. Jev's 0-1 outputs are calibrated probabilities, but no threshold here has been checked against this workload's real score distribution, and fixtures cannot supply one because fixture scores are invented. Do not read them as tuned. Procedure for replacing them: run shadow mode, collect human_feedback, then use `guard report --distribution` and `guard replay --policy <candidate>` to compare. A change means a NEW policy_version, never an edit to this file. See docs/design.md section 'Thresholds'.",
+  "thresholds": {
+    "task_fit_min": 0.80,
+    "incremental_value_min": 0.70,
+    "duplication_risk_max": 0.30,
+    "evidence_sufficiency_min": 0.70,
+    "confidence_min": 0.80
+  },
+  "_confidence_min_note": "confidence_min is the most volatile knob: set it too high and nearly everything becomes REVIEW, too low and REVIEW never fires. Check the REVIEW share in the first shadow run and report it if it lands at either extreme.",
+  "exact_repurchase_window": "PT24H",
+  "max_input_bytes": 262144,
+  "retry_detection": "idempotency_key",
+  "_retry_detection_note": "TODO: no host purchase flow exists yet, so the retry convention is unknown. Only a host-set idempotency_key or an explicit retry_of marker counts as a retry; every other reappearance of a request_id is recorded as DUPLICATE_REQUEST_ID and sent to REVIEW. Revisit once the host flow exists.",
+  "jev": {
+    "model": "jev-latest",
+    "timeout_ms": 8000,
+    "retries": 2
+  },
+  "hook": {
+    "mode": "async",
+    "hook_timeout_ms": null,
+    "_hook_timeout_note": "TODO: only used by the synchronous fallback. The value must be set from the measured duration of the host's existing purchase call, which cannot be measured until that flow exists. Async mode is the default and does not read it.",
+    "queue_size": 1024
+  },
+  "pricing": {
+    "input_per_mtok_usd": null,
+    "output_per_mtok_usd": null,
+    "source": null,
+    "_pricing_note": "TODO: unset, so usage.cost_usd stays null rather than being guessed. Fill both rates and cite the TypeSafe price list in `source` before reading any cost figure from `guard report`."
+  }
+}
