@@ -5,8 +5,9 @@ no real Jev call is represented here.** The scores in the ledger are invented
 fixture values.
 
 - `ledger.sample.jsonl` — all six event types, hash-chained
-- `report.sample.json` — the chapter 14 metrics
+- `report.sample.json` — the shadow metrics
 - `replay.sample.json` — the same ledger re-decided under `shadow-v1`
+- `sample.sample.json` — what `guard sample` would put in front of a person
 
 Reproduce:
 
@@ -33,3 +34,7 @@ decisions labelled by a person:
 
 Those three read together, not `not_needed_held` alone. Holding everything
 would also score 1.0 there, and would be useless.
+
+`label_coverage_by_decision` shows the same split per verdict, which is what
+the weekly routine is graded against: `HOLD` and `REVIEW` should reach 1.0,
+while `PAY` is only sampled.

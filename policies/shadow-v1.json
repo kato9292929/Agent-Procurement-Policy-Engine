@@ -3,11 +3,11 @@
   "provisional": true,
   "_provisional_note": "These thresholds are PROVISIONAL. Jev's 0-1 outputs are calibrated probabilities, but no threshold here has been checked against this workload's real score distribution, and fixtures cannot supply one because fixture scores are invented. Do not read them as tuned. Procedure for replacing them: run shadow mode, collect human_feedback, then use `guard report --distribution` and `guard replay --policy <candidate>` to compare. A change means a NEW policy_version, never an edit to this file. See docs/design.md section 'Thresholds'.",
   "thresholds": {
-    "task_fit_min": 0.80,
-    "incremental_value_min": 0.70,
-    "duplication_risk_max": 0.30,
-    "evidence_sufficiency_min": 0.70,
-    "confidence_min": 0.80
+    "task_fit_min": 0.8,
+    "incremental_value_min": 0.7,
+    "duplication_risk_max": 0.3,
+    "evidence_sufficiency_min": 0.7,
+    "confidence_min": 0.8
   },
   "_confidence_min_note": "confidence_min is the most volatile knob: set it too high and nearly everything becomes REVIEW, too low and REVIEW never fires. Check the REVIEW share in the first shadow run and report it if it lands at either extreme.",
   "exact_repurchase_window": "PT24H",
@@ -22,13 +22,28 @@
   "hook": {
     "mode": "async",
     "hook_timeout_ms": null,
-    "_hook_timeout_note": "TODO: only used by the synchronous fallback. The value must be set from the measured duration of the host's existing purchase call, which cannot be measured until that flow exists. Async mode is the default and does not read it.",
-    "queue_size": 1024
+    "_hook_timeout_note": "TODO: only used by the synchronous fallback. Set it from the measured duration of the host's existing purchase call, and keep jev.timeout_ms below it - the per-request timeout is what actually bounds the wait. Async mode is the default and does not read it.",
+    "max_pending": 1024,
+    "_max_pending_note": "Candidates accepted but not yet written. Past this the payment path drops rather than waits; a drop costs one shadow record, waiting would cost payment latency.",
+    "shutdown_drain_ms": 5000,
+    "_shutdown_drain_note": "How long a shutting-down process may spend flushing queued candidates. Anything left is counted and logged, never silently lost."
   },
   "pricing": {
     "input_per_mtok_usd": null,
     "output_per_mtok_usd": null,
     "source": null,
     "_pricing_note": "TODO: unset, so usage.cost_usd stays null rather than being guessed. Fill both rates and cite the TypeSafe price list in `source` before reading any cost figure from `guard report`."
+  },
+  "ledger": {
+    "backend": "jsonl",
+    "path": "./var/spend-guard/ledger.jsonl",
+    "dsn_env": "SPEND_GUARD_DATABASE_URL",
+    "_dsn_note": "Name of the environment variable holding the connection string. The string itself is never written to config, logs, the ledger, or error messages.",
+    "lock_timeout_ms": 2000,
+    "statement_timeout_ms": 2000
+  },
+  "report": {
+    "orphan_after": "PT15M",
+    "_orphan_note": "A candidate_observed with no guard_evaluated older than this counts as orphaned: the observation was recorded but its judgment never was."
   }
 }

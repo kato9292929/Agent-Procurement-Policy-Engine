@@ -17,11 +17,12 @@ REVIEW   a person should look: uncertain, unexplained, or the guard itself faile
 `REVIEW` is counted separately from `HOLD` everywhere. Sending a purchase to a
 person is a different outcome from deciding it should not happen.
 
-> **Status.** This repository was empty before this work; there is no host x402
-> purchase flow yet, so nothing here is wired to one. The integration point is
-> built and tested as a seam against a stand-in payment flow. No real payment
-> has been evaluated, and several operational questions are open — see
-> [`docs/design.md`](docs/design.md).
+> **Status.** There is no host x402 purchase flow yet, so nothing here is wired
+> to one; the integration point is built and tested as a seam against a
+> stand-in payment flow. No real payment has been evaluated, and **the Jev
+> adapter has never called the real API** — the live suite is written but needs
+> a key (see [`docs/jev-live-verification.md`](docs/jev-live-verification.md)).
+> Open questions are in [`docs/design.md`](docs/design.md).
 
 ---
 
@@ -45,9 +46,15 @@ python3 -m spend_guard.cli --ledger var/ledger.jsonl report --verify-chain --dis
 # Re-decide the whole ledger under a different policy, offline
 python3 -m spend_guard.cli --ledger var/ledger.jsonl replay --policy policies/shadow-v1.json
 
-# Record what a person thought afterwards
+# Pick what a person should label this week, then record their answer
+python3 -m spend_guard.cli --ledger var/ledger.jsonl sample --seed 20260921
 python3 -m spend_guard.cli --ledger var/ledger.jsonl \
   feedback --decision-id dec_... --label not_needed --note "already had this"
+
+# Check the hash chain, and move a ledger between stores
+python3 -m spend_guard.cli --ledger var/ledger.jsonl verify
+python3 -m spend_guard.cli --backend postgres import --from var/ledger.jsonl
+python3 -m spend_guard.cli --backend postgres export --out backup.jsonl
 ```
 
 Against the real model, drop `--dry-run --fixture` and set `TYPESAFE_API_KEY`.
@@ -107,7 +114,7 @@ outcomes.purchase_result(request_id, payment_status="success", http_status=200)
 | | How it is guaranteed |
 |---|---|
 | **Whether a payment happens** | No verdict is returned; the caller has nothing to branch on |
-| **How long the payment path takes** | Judgment runs on a worker thread; the payment path pays only for normalise-and-enqueue |
+| **How long the payment path takes** | `observe()` performs **no I/O at all** — no lock, no file handle, no socket. A writer thread owns every append. Measured p50 0.25 ms, and 0.32 ms with six processes fighting over the ledger |
 | **How the payment path fails** | Every exception — Jev, ledger, normalisation — is caught at the seam; losses are counted, not raised |
 
 Each is tested separately in `tests/test_payment_path.py`, including a ledger
@@ -152,8 +159,22 @@ invented. See "Thresholds" in [`docs/design.md`](docs/design.md).
 
 ## The ledger
 
-Append-only JSONL. Events are never updated; a later fact about a decision is a
-new event carrying the same `decision_id`.
+Append-only. Events are never updated; a later fact about a decision is a new
+event carrying the same `decision_id`.
+
+Two backends behind one interface, with the **same contract tests run against
+both** so they cannot drift:
+
+| | |
+|---|---|
+| `jsonl` | local development and tests. Appends take an exclusive `flock`. |
+| `postgres` | production. Appends serialise on a transaction advisory lock, which covers every connection rather than one host's file. The table is append-only by grant *and* by trigger — the trigger layer exists because grants cannot restrict the table owner. |
+
+Set it with `ledger.backend` in the policy, or `--backend` on any command.
+See [`docs/postgres-setup.md`](docs/postgres-setup.md) for the production
+runbook. A Railway Volume was considered and rejected: a service with a volume
+cannot run replicas and takes downtime on redeploy, which would change the
+*payment service's* availability.
 
 `candidate_observed` · `guard_evaluated` · `purchase_attempted` ·
 `purchase_result` · `delivery_observed` · `human_feedback`
@@ -164,7 +185,9 @@ reading the head and writing, verified across real processes in
 `tests/test_concurrency.py`.
 
 Hashes use RFC 8785 canonical JSON, so reordering keys or reindenting never
-changes a hash.
+changes a hash. In Postgres the canonical form is stored in `event_json` and is
+the only thing hashed; the JSONB `payload` column is for querying only, because
+JSONB reorders keys and renormalises numbers.
 
 Secret-looking keys are redacted on the way in and the file is mode `0600`.
 Provider-specific error text is never stored — only `PROVIDER_ERROR`,
@@ -181,31 +204,42 @@ src/spend_guard/
   checks.py      code-owned checks (required fields, duplication)
   judges/        ProcurementJudge; Jev adapter and offline fixture judge
   aggregate.py   the rules above (pure, which is what makes replay sound)
-  ledger.py      append-only hash-chained JSONL
-  engine.py      observe -> check -> judge -> aggregate -> record
-  hook.py        the payment-path seam: async, fail-open
+  backends/      LedgerBackend: jsonl and postgres, one contract
+  ledger.py      the append-only event log over a backend
+  engine.py      prepare/decide are pure; record_* are the only writes
+  hook.py        the payment-path seam: no I/O, writer thread, fail-open
   outcome.py     attaching real purchase and delivery results
-  report.py      replay and the shadow metrics
-  cli.py         guard evaluate / replay / report / feedback
+  report.py      replay, metrics, orphan detection, review sampling
+  cli.py         evaluate / replay / report / feedback / sample / verify / export / import
 policies/        versioned thresholds (shadow-v1)
+migrations/      Postgres schema and append-only enforcement
 schemas/         JSON Schema for candidate, decision, ledger event
 fixtures/        candidates and recorded Jev answers, for offline runs
 samples/         a worked ledger, report, and replay
-docs/design.md   decisions, trade-offs, and open TODOs
+docs/            design decisions, Postgres runbook, labelling guide
 ```
 
 ## Tests
 
 ```bash
-PYTHONPATH=src:tests python3 -m unittest discover -s tests -v
+python3 -m pytest -q                       # no network, no database needed
+
+SPEND_GUARD_TEST_DATABASE_URL=postgresql://... python3 -m pytest -q   # adds the Postgres suites
+TYPESAFE_API_KEY=... python3 -m pytest tests/live -m live -q -s       # calls the real Jev API
 ```
 
-99 tests, no network. The runtime has **no dependencies**; `jsonschema` is used
-only by the schema-conformance tests, which skip when it is absent.
+The default run needs no network, no database and no key: the Postgres tests
+skip without a DSN, and the live tests are excluded outright by
+`addopts = -m "not live"`.
 
-Tests against the live Jev API are deliberately not part of this suite:
-probabilities drift between runs, so asserting exact values would make the
-suite flaky and would prove nothing about the aggregation.
+The runtime has **no dependencies**. `psycopg` is needed only for the Postgres
+backend (`pip install 'spend-guard[postgres]'`) and is imported inside that
+backend, never at package import time.
+
+Tests against the live Jev API assert **structure, types and ranges only** —
+never a score. Jev's probabilities drift by around 0.05 between runs, so
+pinning one would make the suite flaky and would prove nothing about the
+aggregation.
 
 ---
 
@@ -241,6 +275,15 @@ from either; see the licence check in [`docs/design.md`](docs/design.md).
 - [SemDecide](https://github.com/sharziki/semdecide) — typed semantic decisions,
   `REVIEW` rather than forcing a binary, and keeping uncertainty separate from
   provider failure.
+
+## Human review
+
+Shadow mode is only worth running if someone labels the results, and
+`not_needed_held` on its own is meaningless — holding everything scores
+perfectly. Read it with `needed_held` and `labelled_reviewed`.
+[`docs/labeling.md`](docs/labeling.md) defines the labels and the weekly
+routine; `guard sample` picks the work (all `HOLD` and `REVIEW`, 20% of `PAY`,
+reproducible with `--seed`).
 
 ## Scope
 

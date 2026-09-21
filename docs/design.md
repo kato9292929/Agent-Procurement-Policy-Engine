@@ -97,29 +97,82 @@ one path where latency is least acceptable.
 
 Measured, 200 candidates against a judge deliberately made 250 ms slow:
 
-| | inline cost on the payment path |
-|---|---|
-| p50 | 0.99 ms |
-| p95 | 1.52 ms |
-| max | 62.7 ms |
-| total | 265 ms, against 50,000 ms had it been synchronous |
+| | MVP (inline append) | now (enqueue only) |
+|---|---|---|
+| p50 | 0.92 ms | **0.25 ms** |
+| p99 | 1.86 ms | **0.42 ms** |
+| max | 3.12 ms | **1.19 ms** |
 
-**The tail is worth knowing about.** `observe()` appends `candidate_observed`
-under `flock` and `fsync`s it, so it contends with the worker thread appending
-`guard_evaluated` to the same file. p50 and p95 stay near a millisecond, but a
-contended append can reach tens of milliseconds. That is the price of a durable
-record of the candidate, and durability is the right trade for the observation
-itself — but if a host's purchase path cannot tolerate a ~60 ms tail, the fix is
-to buffer the `candidate_observed` append rather than to make evaluation
-synchronous. Not done here: with no host to measure against, tuning this would
-be guesswork.
+With six other processes competing for the same ledger file:
 
-A synchronous mode exists for hosts that cannot run a worker thread. It is
-bounded by `hook_timeout_ms`, which is **TODO**: a sound value needs the
-measured duration of the host's existing purchase call, and there is no host
-call to measure. When setting it, also set `jev.timeout_ms` below it — the
-per-request timeout is what actually bounds the wait; the budget check only
-records an overrun after the fact.
+| | MVP (inline append) | now (enqueue only) |
+|---|---|---|
+| p50 | 5.23 ms | **0.32 ms** |
+| p99 | 8.70 ms | **0.93 ms** |
+| max | 11.17 ms | **1.28 ms** |
+
+### Where the MVP's time went
+
+The MVP's `observe()` appended inline, so it paid for a `flock` and an
+`fsync` on the payment path. Breaking that down over 300 uncontended
+appends:
+
+| step | p50 | p99 | max |
+|---|---|---|---|
+| normalise | 0.199 ms | 0.350 ms | 0.529 ms |
+| acquire `flock` | 0.001 ms | 0.007 ms | 0.029 ms |
+| seal + write | 0.060 ms | 0.133 ms | 0.166 ms |
+| **`fsync`** | **0.423 ms** | **1.084 ms** | 1.801 ms |
+| total | 0.759 ms | 1.603 ms | 2.484 ms |
+
+So `fsync` was the dominant fixed cost, and `flock` was free *until
+contended* — at which point it became the whole story (p50 5.23 ms above).
+
+**The 62.7 ms outlier reported for the MVP did not reproduce.** Re-running
+the MVP's exact configuration (inline append plus a worker appending
+`guard_evaluated` to the same file) gave a max of 2.47 ms over 200
+candidates, across repeated trials. Three causes were ruled out by
+measurement rather than by argument:
+
+- **Not GC.** Instrumenting `gc.callbacks` over 300 appends, exactly one
+  iteration coincided with a collection, and it was not among the slow ones.
+- **Not thread startup.** The worker starts once, long before the timings.
+- **Not lock contention in-process.** Uncontended `flock` acquisition is
+  about 1 microsecond.
+
+One isolated 34.8 ms sample did appear, with no GC cycle and no lock wait,
+which points at container CPU scheduling rather than anything in this code.
+That is consistent with the original 62.7 ms being environment noise, but it
+was not reproduced and so is **not a confirmed diagnosis**.
+
+It also stopped mattering. `observe()` now performs no I/O at all — no lock,
+no file handle, no socket — so none of `fsync` cost, lock contention or
+storage availability can reach the payment path. The test
+`test_observe_returns_immediately_while_another_process_holds_the_lock`
+holds an exclusive `flock` on the ledger for three seconds and asserts that
+`observe()` still returns in under 50 ms; it measures about 0.2 ms.
+
+### Threads
+
+    payment path --> _writes --> writer --> _evaluating --> evaluator
+                                   ^                            |
+                                   +--------- _writes ----------+
+
+The **writer is the only thread that touches storage**, so every append in a
+process is serial by construction and the ledger lock is never contended from
+within. Evaluation runs on its own thread, so a slow Jev call cannot delay
+recording the next candidate.
+
+Back pressure is bounded by `hook.max_pending` and applied with an in-flight
+counter rather than a bounded queue, because a bounded queue would also refuse
+the decisions the evaluator feeds back — and those must never be dropped once
+the observation they belong to has been written. Over the limit, candidates
+are dropped and counted; the payment path never waits.
+
+On shutdown the guard drains for up to `hook.shutdown_drain_ms`. Whatever is
+left is counted in `unflushed_at_shutdown` and logged. An empty queue is not
+treated as "done": the writer may have taken the last item and still be
+appending it, so shutdown waits on the in-flight count instead.
 
 Three non-interference properties are enforced at the seam rather than left to
 the caller, and each is tested separately:
@@ -127,7 +180,7 @@ the caller, and each is tested separately:
 | Property | How it is enforced | Test |
 |---|---|---|
 | Whether a payment happens | `observe()` returns `None`. There is no API that hands a verdict back. | `test_payment_runs_for_every_shadow_decision`, `test_observe_returns_nothing_to_branch_on` |
-| How long the payment path takes | Async worker; overhead measured and reported | `test_async_mode_keeps_a_slow_jev_off_the_payment_path` |
+| How long the payment path takes | No I/O on the payment path at all; overhead measured and reported | `test_observe_returns_immediately_while_another_process_holds_the_lock`, `test_observe_stays_fast_under_six_competing_processes` |
 | How it fails | Every exception caught at the boundary; losses counted in `dropped` | `test_guard_exception_does_not_reach_the_payment_path`, `test_unwritable_ledger_does_not_reach_the_payment_path` |
 
 Back pressure is dropped rather than queued indefinitely: a full queue must not
@@ -158,18 +211,52 @@ a TODO rather than solved, because the deployment shape is unknown.
 
 ### Where the ledger lives
 
-**TODO — unresolved, and deliberately not guessed.**
+**Resolved: Postgres in production, JSONL for local work and tests.**
 
-Chapter 0 asks whether durable storage exists. There is no host application and
-no deployment to inspect, so this cannot be answered. Changing the production
-environment is out of scope, which rules out provisioning storage here.
+The MVP left this open. It is now decided, and the application half is built:
+`LedgerBackend` has two implementations and the same contract tests run against
+both, so they cannot drift.
 
-The default is a local path (`./var/spend-guard/ledger.jsonl`) and every
-component takes the path as a parameter. **Nothing in this repository has been
-run against a production environment, and no claim is made that records would
-survive a redeploy there.** If the eventual host has an ephemeral filesystem,
-the ledger must move to durable storage before shadow mode means anything —
-metrics computed from a ledger that vanishes are worthless.
+**A Railway Volume was considered and rejected.** It is simpler, but a service
+with a volume attached cannot run replicas and takes downtime on every
+redeploy. That would change the availability of the *payment service* — the one
+thing shadow mode must not touch. A separate Postgres keeps the ledger durable
+without putting the payment service's uptime at the mercy of the guard.
+
+In the table, the event is stored twice, and the difference matters:
+
+- `event_json` — the RFC 8785 canonical form. The record of truth, and the
+  **only** thing hashes are computed or verified against.
+- `payload` — JSONB, for querying. JSONB reorders keys and renormalises
+  numbers, so a hash taken over it would disagree with the JSONL backend for
+  the very same event. `test_both_backends_produce_identical_hashes` is what
+  keeps that honest.
+
+Both columns are written from one in-memory object, so they cannot drift.
+
+Appends serialise on `pg_advisory_xact_lock`, which covers every connection
+rather than one host's file, so replicas still produce one chain. Verified with
+six real processes appending concurrently.
+
+Append-only is enforced in two independent layers, because grants cannot
+restrict the table **owner** — the account someone would be using at a `psql`
+prompt:
+
+1. `spend_guard_writer` holds `INSERT` and `SELECT` only; `spend_guard_reader`
+   holds `SELECT`.
+2. Triggers raise on `UPDATE`, `DELETE` and `TRUNCATE`.
+
+Both layers are tested, including against the owner.
+
+**What is still the owner's to do:** creating the Railway Postgres, running the
+migrations, setting role passwords and the environment variable. Those need
+production credentials, which no code here should hold. `docs/postgres-setup.md`
+is the runbook.
+
+**The connection string** is read from the environment variable named by
+`ledger.dsn_env` and never appears in the policy file, the logs, the ledger, or
+any error message — Postgres errors are reduced to their exception class name
+before being raised. Tested.
 
 ### What is never stored
 
@@ -324,26 +411,34 @@ around money regardless of what the model says.
 
 Unresolved, and not guessed at:
 
-1. **Ledger storage location in production**, including whether the filesystem
-   survives a redeploy. Blocks any claim that shadow records persist.
-2. **`hook_timeout_ms`** for synchronous mode — needs the measured duration of
-   the host's existing purchase call.
+1. **The Jev adapter has still never called the real API.** No
+   `TYPESAFE_API_KEY` was available. The live suite is written and ready
+   (`tests/live`, capped at 20 calls, excluded from `pytest -q`), but until it
+   is run, the response structure, the presence of a per-question confidence,
+   and the token fields are **assumptions**. See
+   `docs/jev-live-verification.md`.
+2. **`hook_timeout_ms`** for the synchronous fallback — needs the measured
+   duration of the host's existing purchase call. Async is the default and does
+   not read it.
 3. **Retry convention** of the host flow. Until known, all unexplained
-   `request_id` reuse is `DUPLICATE_REQUEST_ID`.
-4. **Whether the host carries `request_id` end to end.** If not, the correlation
-   mechanism must be proposed and agreed before any host change.
+   `request_id` reuse is `DUPLICATE_REQUEST_ID`, which errs toward a person.
+4. **Whether the host carries `request_id` end to end.** `OutcomeRecorder`
+   correlates on it, with `link_by_decision_id` as the fallback.
 5. **Jev token pricing** — `pricing` is unset, so `cost_usd` stays null rather
-   than being guessed. Fill both rates and cite the source before reading any
-   cost figure.
+   than guessed. Needs step 1 first.
 6. **Class 5** — still undefined; nothing depends on it.
-7. **Human evaluation operations** (chapter 14): who labels, how often, how
-   candidates are sampled (suggested: all `HOLD` and `REVIEW`, a fixed random
-   share of `PAY`), and what "was not needed" means precisely. Without this
-   none of the comparison metrics can be computed.
-8. **Multi-host ledger writes** — `flock` covers one host only.
-9. **`LedgerIndex` scans the whole ledger** on construction. Fine at MVP volume;
-   it needs an index file before the ledger reaches the hundreds of thousands.
-10. **`ledger_write_failures`** in `guard report` is always null. It is not
-    derivable from the ledger itself — a failed write leaves no record there by
-    definition — and must come from the host's own log.
-11. **No `LICENSE` file.** Owner's decision.
+7. **Connecting to a real x402 purchase flow** (part C) was not attempted: no
+   target repository was given.
+8. **Owner tasks for Postgres**: create the database, run the migrations, set
+   role passwords and `SPEND_GUARD_DATABASE_URL`. See `docs/postgres-setup.md`.
+9. **The human labelling rota** — who labels and when. The selection tooling
+   (`guard sample`) and the criteria (`docs/labeling.md`) exist; the people do
+   not.
+10. **`LedgerIndex` scans the whole ledger** on construction. Fine at MVP
+    volume; it needs an index or a bounded window before the ledger reaches the
+    hundreds of thousands.
+11. **Dropped and shutdown-lost candidates are not in the ledger.** A candidate
+    that was never written leaves no trace in it by definition. They are counted
+    in `ShadowGuard.counters` and emitted to the host log;
+    `orphaned_candidates` in `guard report` is the ledger-visible symptom.
+12. **No `LICENSE` file.** Owner's decision.

@@ -1,13 +1,17 @@
-"""`guard` command line (chapter 10).
+"""`guard` command line (chapters 10, D-6 and E-1).
 
 Exit codes keep semantic uncertainty and system failure apart:
 
     0   PAY                 2   invalid local input
     10  HOLD                4   Jev provider error
-    20  REVIEW              5   ledger write error
+    20  REVIEW              5   ledger read/write error
 
 The ledger-error code applies to CLI use only. On the payment path chapter 6
 takes over and no exception leaves the guard.
+
+Every command works against either backend: `--backend jsonl` (default, from
+the policy) or `--backend postgres`, which reads its connection string from
+the environment variable named by `ledger.dsn_env`.
 """
 
 from __future__ import annotations
@@ -18,26 +22,26 @@ import sys
 from pathlib import Path
 from typing import Any, Iterator, Sequence, TextIO
 
+from .backends import build_backend, prepare_event, verify_chain
 from .engine import ShadowEngine
 from .errors import (
+    DECISION_EXIT_CODES,
     EXIT_INPUT_ERROR,
     EXIT_LEDGER_ERROR,
     EXIT_PAY,
     EXIT_PROVIDER_ERROR,
-    DECISION_EXIT_CODES,
     InputError,
     LedgerError,
     ProviderError,
 )
 from .judges import FixtureProcurementJudge, JevProcurementJudge
 from .judges.base import ProcurementJudge
-from .ledger import Ledger, verify_chain
+from .ledger import Ledger
 from .models import SEMANTIC_OK
 from .policy import Policy
-from .report import FEEDBACK_LABELS, replay, report, score_distribution
+from .report import FEEDBACK_LABELS, replay, report, sample, score_distribution
 
 DEFAULT_POLICY = Path(__file__).resolve().parents[2] / "policies" / "shadow-v1.json"
-DEFAULT_LEDGER = "./var/spend-guard/ledger.jsonl"
 
 
 def _emit(data: Any, stream: TextIO) -> None:
@@ -67,6 +71,20 @@ def _load_jsonl(path: str) -> Iterator[Any]:
             raise InputError(f"{path}:{number} is not valid JSON: {exc}") from exc
 
 
+def _policy(args: argparse.Namespace) -> Policy:
+    return Policy.load(args.policy)
+
+
+def _ledger(args: argparse.Namespace, policy: Policy | None = None) -> Ledger:
+    """Open the ledger named by the policy, with CLI flags taking precedence."""
+    policy = policy or _policy(args)
+    config = dict(policy.ledger)
+    if getattr(args, "backend", None):
+        config["backend"] = args.backend
+    path = getattr(args, "ledger", None) or config.get("path")
+    return Ledger(backend=build_backend(config, path=path))
+
+
 def _judge(args: argparse.Namespace) -> ProcurementJudge:
     """Pick the judge. `--dry-run` never reaches the network."""
     if args.dry_run or args.judge == "fixture":
@@ -76,32 +94,30 @@ def _judge(args: argparse.Namespace) -> ProcurementJudge:
     return JevProcurementJudge()
 
 
-def _engine(args: argparse.Namespace) -> ShadowEngine:
-    return ShadowEngine(Policy.load(args.policy), _judge(args), Ledger(args.ledger))
-
-
 def cmd_evaluate(args: argparse.Namespace, out: TextIO) -> int:
-    engine = _engine(args)
+    policy = _policy(args)
+    engine = ShadowEngine(policy, _judge(args), _ledger(args, policy))
     if args.jsonl:
-        results: list[dict[str, Any]] = []
         worst = EXIT_PAY
         for raw in _load_jsonl(args.input):
             decision = engine.process(raw)
             if decision is None:
-                results.append({"skipped": "already_evaluated"})
+                out.write(json.dumps({"skipped": "already_evaluated"}, ensure_ascii=False) + "\n")
                 continue
-            results.append(decision.as_dict())
+            out.write(json.dumps(decision.as_dict(), ensure_ascii=False) + "\n")
             worst = max(worst, DECISION_EXIT_CODES[decision.decision])
-        for item in results:
-            out.write(json.dumps(item, ensure_ascii=False) + "\n")
         return worst
 
     decision = engine.process(_load_json(args.input))
     if decision is None:
         _emit({"skipped": "already_evaluated"}, out)
         return EXIT_PAY
-    _emit(decision.as_dict() if args.json else {"decision": decision.decision,
-                                                "reason_codes": list(decision.reason_codes)}, out)
+    _emit(
+        decision.as_dict()
+        if args.json
+        else {"decision": decision.decision, "reason_codes": list(decision.reason_codes)},
+        out,
+    )
     # A provider failure is an operational problem even though the shadow
     # decision (REVIEW) is a perfectly ordinary outcome, so it gets its own code.
     if decision.semantic_judgments.status not in (SEMANTIC_OK, "SKIPPED"):
@@ -110,13 +126,15 @@ def cmd_evaluate(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def cmd_replay(args: argparse.Namespace, out: TextIO) -> int:
-    _emit(replay(Ledger(args.ledger), Policy.load(args.policy)), out)
+    policy = _policy(args)
+    _emit(replay(_ledger(args, policy), policy), out)
     return EXIT_PAY
 
 
 def cmd_report(args: argparse.Namespace, out: TextIO) -> int:
-    ledger = Ledger(args.ledger)
-    data = report(ledger)
+    policy = _policy(args)
+    ledger = _ledger(args, policy)
+    data = report(ledger, policy)
     if args.distribution:
         data["score_distribution"] = score_distribution(ledger)
     if args.verify_chain:
@@ -126,13 +144,11 @@ def cmd_report(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def cmd_feedback(args: argparse.Namespace, out: TextIO) -> int:
-    ledger = Ledger(args.ledger)
-    target = None
-    for event in ledger.iter_events():
-        if event.get("decision_id") == args.decision_id:
-            target = event
-    if target is None:
+    ledger = _ledger(args)
+    matches = ledger.find_by_decision_id(args.decision_id)
+    if not matches:
         raise InputError(f"no ledger event for decision {args.decision_id}")
+    target = matches[-1]
     event = ledger.append(
         "human_feedback",
         decision_id=args.decision_id,
@@ -144,10 +160,111 @@ def cmd_feedback(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_PAY
 
 
+def cmd_sample(args: argparse.Namespace, out: TextIO) -> int:
+    result = sample(
+        _ledger(args), since=args.since, pay_rate=args.pay_rate, seed=args.seed
+    )
+    if args.json:
+        _emit(result, out)
+        return EXIT_PAY
+    out.write(
+        f"{result['selected']} to label "
+        f"(PAY {result['selected_by_decision']['PAY']}, "
+        f"HOLD {result['selected_by_decision']['HOLD']}, "
+        f"REVIEW {result['selected_by_decision']['REVIEW']})\n\n"
+    )
+    for item in result["items"]:
+        out.write(
+            f"{item['decision_id']}  {item['decision']:6}  "
+            f"{item['provider_id']}/{item['service_id']}/{item['route_id']}\n"
+            f"    purpose: {item['task_purpose']}\n"
+            f"    reasons: {', '.join(item['reason_codes'])}\n"
+            f"    payment: {item['payment_status']}\n"
+        )
+    return EXIT_PAY
+
+
+def cmd_verify(args: argparse.Namespace, out: TextIO) -> int:
+    ledger = _ledger(args)
+    events = ledger.read()
+    problems = verify_chain(events)
+    _emit(
+        {
+            "backend": args.backend or _policy(args).ledger.get("backend", "jsonl"),
+            "events": len(events),
+            "chain_intact": not problems,
+            "problems": problems,
+        },
+        out,
+    )
+    return EXIT_PAY if not problems else EXIT_LEDGER_ERROR
+
+
+def cmd_export(args: argparse.Namespace, out: TextIO) -> int:
+    """Write the ledger out as JSONL, byte-identical in meaning to the source."""
+    ledger = _ledger(args)
+    destination = Path(args.out)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    count = 0
+    with destination.open("w", encoding="utf-8") as handle:
+        for event in ledger.iter_events():
+            handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
+            count += 1
+    _emit({"exported": count, "out": str(destination)}, out)
+    return EXIT_PAY
+
+
+def cmd_import(args: argparse.Namespace, out: TextIO) -> int:
+    """Load an existing JSONL ledger into the target backend.
+
+    The source chain is verified before anything is written: importing a
+    ledger that is already broken would bake the break into the new store,
+    and the whole point of the chain is to notice that.
+    """
+    events = [event for event in _load_jsonl(args.source) if isinstance(event, dict)]
+    problems = verify_chain(events)
+    if problems and not args.allow_broken_chain:
+        _emit(
+            {
+                "error": "source_chain_broken",
+                "problems": problems[:10],
+                "hint": "pass --allow-broken-chain to import anyway",
+            },
+            out,
+        )
+        return EXIT_LEDGER_ERROR
+
+    ledger = _ledger(args)
+    if ledger.latest_event_hash() is not None and not args.append:
+        raise InputError("the target ledger is not empty; pass --append to add to it")
+
+    imported = 0
+    for event in events:
+        # Re-sealed by the target backend so the imported run chains onto
+        # whatever is already there rather than carrying stale links.
+        ledger.append_prepared(
+            prepare_event(
+                event["event_type"],
+                decision_id=event.get("decision_id"),
+                candidate_id=event.get("candidate_id"),
+                request_id=event.get("request_id"),
+                payload=event.get("payload") or {},
+                occurred_at=event.get("occurred_at"),
+                event_id=event.get("event_id"),
+            )
+        )
+        imported += 1
+    _emit({"imported": imported, "source_chain_problems": problems}, out)
+    return EXIT_PAY
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="guard", description="x402 Spend Guard (shadow mode)")
     parser.add_argument("--policy", default=str(DEFAULT_POLICY), help="policy JSON file")
-    parser.add_argument("--ledger", default=DEFAULT_LEDGER, help="append-only ledger path")
+    parser.add_argument("--ledger", help="ledger path (jsonl backend); defaults to the policy")
+    parser.add_argument(
+        "--backend", choices=("jsonl", "postgres"), help="override ledger.backend from the policy"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     evaluate = sub.add_parser("evaluate", help="evaluate one candidate or a JSONL stream")
@@ -172,6 +289,28 @@ def build_parser() -> argparse.ArgumentParser:
     feedback.add_argument("--label", required=True, choices=FEEDBACK_LABELS)
     feedback.add_argument("--note")
     feedback.set_defaults(handler=cmd_feedback)
+
+    sample_cmd = sub.add_parser("sample", help="pick the decisions a person should label")
+    sample_cmd.add_argument("--since", help="ISO 8601 timestamp; ignore decisions older than this")
+    sample_cmd.add_argument("--pay-rate", type=float, default=0.2, help="share of PAY to sample")
+    sample_cmd.add_argument("--seed", type=int, help="make the selection reproducible")
+    sample_cmd.add_argument("--json", action="store_true")
+    sample_cmd.set_defaults(handler=cmd_sample)
+
+    verify = sub.add_parser("verify", help="check the hash chain")
+    verify.set_defaults(handler=cmd_verify)
+
+    export = sub.add_parser("export", help="write the ledger out as JSONL")
+    export.add_argument("--out", required=True)
+    export.set_defaults(handler=cmd_export)
+
+    import_cmd = sub.add_parser("import", help="load a JSONL ledger into the target backend")
+    import_cmd.add_argument("--from", dest="source", required=True)
+    import_cmd.add_argument("--append", action="store_true", help="allow a non-empty target")
+    import_cmd.add_argument(
+        "--allow-broken-chain", action="store_true", help="import even if the source fails to verify"
+    )
+    import_cmd.set_defaults(handler=cmd_import)
     return parser
 
 

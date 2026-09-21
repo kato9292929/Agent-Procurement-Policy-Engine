@@ -3,6 +3,14 @@
 Nothing here decides whether a payment happens. In shadow mode the decision is
 written to the ledger beside whatever the existing flow did, so the two can be
 compared later.
+
+The steps are split into pure and storage-touching halves:
+
+* `prepare` and `decide` do no I/O at all
+* `record_observation` and `record_decision` are the only methods that append
+
+That split is what lets the payment path call `prepare` and hand the rest to a
+writer thread, so it never waits on a lock (see `hook.py`).
 """
 
 from __future__ import annotations
@@ -11,6 +19,7 @@ import time
 from typing import Any
 
 from .aggregate import aggregate
+from .backends import prepare_event
 from .checks import run as run_checks
 from .errors import ProviderError
 from .judges.base import ProcurementJudge
@@ -50,10 +59,10 @@ class ShadowEngine:
         self.ledger = ledger
         self.index = index if index is not None else LedgerIndex(ledger)
 
-    # -- step 1, on the payment path: cheap, bounded, and it records a snapshot --
+    # -- step 1a: pure. This is all the payment path runs. --
 
-    def observe(self, raw: Any, *, decision_id: str | None = None) -> dict[str, Any]:
-        """Normalise and record a candidate. Does not call Jev.
+    def prepare(self, raw: Any, *, decision_id: str | None = None) -> dict[str, Any]:
+        """Normalise a candidate and build its event, touching no storage.
 
         `prior_acquisitions` is frozen here. Chapter 5 requires it: were the
         snapshot taken at evaluation time instead, an asynchronous run could
@@ -74,43 +83,54 @@ class ShadowEngine:
         }
         if duplicate_of:
             payload["duplicate_of"] = duplicate_of
-        payload["hook_overhead_ms"] = round((time.perf_counter() - started) * 1000, 3)
 
-        event = self.ledger.append(
-            "candidate_observed",
-            decision_id=decision_id,
-            candidate_id=candidate.candidate_id,
-            request_id=candidate.request_id,
-            payload=payload,
-        )
-        self.index.observe_event(event)
+        record = {
+            "decision_id": decision_id,
+            "candidate_id": candidate.candidate_id,
+            "idempotency_key": candidate.idempotency_key,
+            "input_hash": digest,
+            "occurred_at": candidate.observed_at,
+        }
+        # Index before the write, or a burst of identical candidates would all
+        # miss the repeat check while they are still queued.
+        if not duplicate_of:
+            self.index.observe_pending(candidate.request_id, digest, record)
+
+        payload["hook_overhead_ms"] = round((time.perf_counter() - started) * 1000, 3)
         return {
-            "event": event,
             "candidate": candidate,
             "input_hash": digest,
             "decision_id": decision_id,
             "duplicate_of": duplicate_of,
+            "unsealed": prepare_event(
+                "candidate_observed",
+                decision_id=decision_id,
+                candidate_id=candidate.candidate_id,
+                request_id=candidate.request_id,
+                payload=payload,
+            ),
         }
 
-    # -- step 2, off the payment path: checks, Jev, aggregation, record --
+    # -- step 1b: the writer thread's job --
 
-    def evaluate(
-        self,
-        candidate: Candidate,
-        *,
-        decision_id: str,
-        digest: str | None = None,
-        record: bool = True,
-    ) -> Decision:
+    def record_observation(self, observed: dict[str, Any]) -> dict[str, Any]:
+        event = self.ledger.append_prepared(observed["unsealed"])
+        self.index.observe_event(event)
+        return event
+
+    # -- step 2a: pure. Checks, Jev, aggregation. --
+
+    def decide(self, observed: dict[str, Any]) -> Decision:
         started = time.perf_counter()
-        digest = digest or input_hash(candidate)
-        checks = run_checks(
-            candidate, self.policy, lookup=self.index, decision_id=decision_id
-        )
+        candidate: Candidate = observed["candidate"]
+        decision_id = observed["decision_id"]
+        digest = observed.get("input_hash") or input_hash(candidate)
+
+        checks = run_checks(candidate, self.policy, lookup=self.index, decision_id=decision_id)
         judgment = self._judge(candidate, checks)
         verdict, reasons = aggregate(checks, judgment, self.policy)
 
-        decision = Decision(
+        return Decision(
             decision_id=decision_id,
             candidate_id=candidate.candidate_id,
             request_id=candidate.request_id,
@@ -123,16 +143,19 @@ class ShadowEngine:
             created_at=utc_now(),
             latency_ms=round((time.perf_counter() - started) * 1000),
         )
-        if record:
-            event = self.ledger.append(
-                "guard_evaluated",
-                decision_id=decision_id,
-                candidate_id=candidate.candidate_id,
-                request_id=candidate.request_id,
-                payload=decision.as_dict(),
-            )
-            self.index.observe_event(event)
-        return decision
+
+    # -- step 2b: the writer thread's job --
+
+    def record_decision(self, decision: Decision) -> dict[str, Any]:
+        event = self.ledger.append(
+            "guard_evaluated",
+            decision_id=decision.decision_id,
+            candidate_id=decision.candidate_id,
+            request_id=decision.request_id,
+            payload=decision.as_dict(),
+        )
+        self.index.observe_event(event)
+        return event
 
     def _judge(self, candidate: Candidate, checks: DeterministicChecks) -> SemanticJudgment:
         """Call Jev unless rule 1 already disqualified the candidate.
@@ -150,7 +173,27 @@ class ShadowEngine:
         except Exception as error:  # noqa: BLE001 - an adapter bug must not become an outage
             return semantic_failure(ProviderError(str(error), kind="PROVIDER_ERROR"))
 
-    # -- convenience for the CLI: both steps in one call --
+    # -- synchronous convenience, used by the CLI --
+
+    def observe(self, raw: Any, *, decision_id: str | None = None) -> dict[str, Any]:
+        observed = self.prepare(raw, decision_id=decision_id)
+        observed["event"] = self.record_observation(observed)
+        return observed
+
+    def evaluate(
+        self,
+        candidate: Candidate,
+        *,
+        decision_id: str,
+        digest: str | None = None,
+        record: bool = True,
+    ) -> Decision:
+        decision = self.decide(
+            {"candidate": candidate, "decision_id": decision_id, "input_hash": digest}
+        )
+        if record:
+            self.record_decision(decision)
+        return decision
 
     def process(self, raw: Any) -> Decision | None:
         """Observe then evaluate. Returns None when the candidate was a repeat.
@@ -162,8 +205,6 @@ class ShadowEngine:
         observed = self.observe(raw)
         if observed["duplicate_of"]:
             return None
-        return self.evaluate(
-            observed["candidate"],
-            decision_id=observed["decision_id"],
-            digest=observed["input_hash"],
-        )
+        decision = self.decide(observed)
+        self.record_decision(decision)
+        return decision

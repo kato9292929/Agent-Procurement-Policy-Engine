@@ -1,0 +1,104 @@
+{
+  "schema_version": "1",
+  "since": null,
+  "pay_rate": 1.0,
+  "seed": 20260921,
+  "deterministic": true,
+  "selected": 4,
+  "selected_by_decision": {
+    "PAY": 0,
+    "HOLD": 0,
+    "REVIEW": 4
+  },
+  "skipped": {
+    "already_labelled": 5,
+    "no_purchase_result": 0,
+    "before_since": 0,
+    "not_sampled": 0
+  },
+  "items": [
+    {
+      "decision_id": "dec_47b456605a35434ebb0a82ff",
+      "decision": "REVIEW",
+      "reason_codes": [
+        "MISSING_REQUIRED_FIELDS"
+      ],
+      "created_at": "2026-09-21T13:49:08Z",
+      "task_purpose": "Check how the target company's latest results changed",
+      "required_data": [
+        "revenue"
+      ],
+      "provider_id": "provider_alpha",
+      "service_id": null,
+      "route_id": null,
+      "service_description": "Unspecified route",
+      "payment_status": "success",
+      "response_received": true,
+      "required_fields_present": null,
+      "label_command": "guard feedback --decision-id dec_47b456605a35434ebb0a82ff --label needed|not_needed|unknown"
+    },
+    {
+      "decision_id": "dec_5a26a68622034afc8def421f",
+      "decision": "REVIEW",
+      "reason_codes": [
+        "INVALID_RESPONSE"
+      ],
+      "created_at": "2026-09-21T13:49:08Z",
+      "task_purpose": "Check how the target company's latest results changed",
+      "required_data": [
+        "revenue"
+      ],
+      "provider_id": "provider_alpha",
+      "service_id": "filings",
+      "route_id": "balance",
+      "service_description": "Balance sheet from the latest quarterly filing",
+      "payment_status": "success",
+      "response_received": true,
+      "required_fields_present": null,
+      "label_command": "guard feedback --decision-id dec_5a26a68622034afc8def421f --label needed|not_needed|unknown"
+    },
+    {
+      "decision_id": "dec_66015f718a82477cac73b018",
+      "decision": "REVIEW",
+      "reason_codes": [
+        "LOW_CONFIDENCE_TASK_FIT",
+        "LOW_CONFIDENCE_INCREMENTAL_VALUE",
+        "TASK_MISMATCH",
+        "NO_INCREMENTAL_VALUE"
+      ],
+      "created_at": "2026-09-21T13:49:08Z",
+      "task_purpose": "Check how the target company's latest results changed",
+      "required_data": [
+        "segment breakdown"
+      ],
+      "provider_id": "provider_delta",
+      "service_id": "analytics",
+      "route_id": "segments",
+      "service_description": "Third-party segment estimates of uncertain provenance",
+      "payment_status": "success",
+      "response_received": true,
+      "required_fields_present": null,
+      "label_command": "guard feedback --decision-id dec_66015f718a82477cac73b018 --label needed|not_needed|unknown"
+    },
+    {
+      "decision_id": "dec_8e20f2e55ef249d6b18f4dff",
+      "decision": "REVIEW",
+      "reason_codes": [
+        "TIMEOUT"
+      ],
+      "created_at": "2026-09-21T13:49:08Z",
+      "task_purpose": "Check how the target company's latest results changed",
+      "required_data": [
+        "revenue"
+      ],
+      "provider_id": "provider_alpha",
+      "service_id": "filings",
+      "route_id": "cashflow",
+      "service_description": "Cash-flow statement from the latest quarterly filing",
+      "payment_status": "success",
+      "response_received": true,
+      "required_fields_present": null,
+      "label_command": "guard feedback --decision-id dec_8e20f2e55ef249d6b18f4dff --label needed|not_needed|unknown"
+    }
+  ]
+}

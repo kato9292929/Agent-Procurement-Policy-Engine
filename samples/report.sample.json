@@ -34,9 +34,35 @@
     "purchases_succeeded": 9,
     "feedback_coverage": 0.5556,
     "labelled": 5,
+    "labels_until_threshold_review": 95,
+    "review_target_labels": 100,
+    "label_coverage_by_decision": {
+      "PAY": {
+        "evaluated": 1,
+        "labelled": 1,
+        "rate": 1.0
+      },
+      "HOLD": {
+        "evaluated": 3,
+        "labelled": 3,
+        "rate": 1.0
+      },
+      "REVIEW": {
+        "evaluated": 5,
+        "labelled": 1,
+        "rate": 0.2
+      }
+    },
     "not_needed_held": 1.0,
     "needed_held": 0.0,
     "labelled_reviewed": 0.2
+  },
+  "integrity": {
+    "orphaned_candidates": 0,
+    "orphan_after": "PT15M",
+    "orphaned_decision_ids": [],
+    "dropped_candidates": "see host log (spend_guard.dropped)",
+    "unflushed_at_shutdown": "see host log (spend_guard.unflushed_at_shutdown)"
   },
   "cost_and_performance": {
     "judgment_cost_usd": null,
@@ -47,15 +73,15 @@
       "p95": 0.0
     },
     "hook_overhead_ms": {
-      "p50": 0.231,
-      "p95": 0.687
+      "p50": 0.194,
+      "p95": 0.503
     },
     "provider_error_rate": 0.2222,
     "missing_input_rate": 0.1111,
-    "ledger_write_failures": null
+    "ledger_write_failures": "see host log (spend_guard.dropped reason=write_failed)"
   },
   "notes": [
-    "ledger_write_failures is not derivable from the ledger itself; it comes from the host's own log (see chapter 6 fail-open behaviour).",
+    "Dropped candidates, shutdown losses and write failures cannot be derived from the ledger: a candidate that was never written leaves no trace in it by definition. They are counted in ShadowGuard.counters and emitted to the host log. orphaned_candidates is the ledger-visible symptom of the same problem, and is computed here.",
     "Savings alone is not a success metric: read needed_held together with counts before changing a threshold."
   ],
   "score_distribution": {

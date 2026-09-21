@@ -50,6 +50,8 @@ class Policy:
     jev: dict[str, Any] = field(default_factory=dict)
     hook: dict[str, Any] = field(default_factory=dict)
     pricing: dict[str, Any] = field(default_factory=dict)
+    ledger: dict[str, Any] = field(default_factory=dict)
+    report: dict[str, Any] = field(default_factory=dict)
 
     @property
     def repurchase_window_seconds(self) -> float:
@@ -85,6 +87,8 @@ class Policy:
             jev=dict(data.get("jev") or {}),
             hook=dict(data.get("hook") or {}),
             pricing=dict(data.get("pricing") or {}),
+            ledger=dict(data.get("ledger") or {}),
+            report=dict(data.get("report") or {}),
         )
 
     @classmethod
