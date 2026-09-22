@@ -1,5 +1,7 @@
 """Ledger storage backends."""
 
+from __future__ import annotations
+
 from .base import (
     EVENT_TYPES,
     GENESIS,

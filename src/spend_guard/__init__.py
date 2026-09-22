@@ -4,6 +4,8 @@ Shadow mode observes purchase candidates and records what it would have
 decided. It never changes whether a payment happens.
 """
 
+from __future__ import annotations
+
 from .engine import ShadowEngine
 from .hook import ShadowGuard
 from .ledger import Ledger, LedgerIndex
