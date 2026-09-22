@@ -48,7 +48,7 @@ def judge() -> FixtureProcurementJudge:
     return FixtureProcurementJudge.from_file(ANSWERS)
 
 
-def engine(tmp: Path, *, the_judge=None, the_policy=None) -> ShadowEngine:
+def engine(tmp: Path, *, the_judge=None, the_policy=None) -> ShadowEngine:  # noqa: D401
     return ShadowEngine(
         the_policy or policy(),
         the_judge or judge(),

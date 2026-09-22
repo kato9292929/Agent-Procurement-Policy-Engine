@@ -364,6 +364,14 @@ low on every candidate with low confidence in its own answer. See
 `docs/jev-live-verification.md`; the observed answers are replayed by
 `tests/test_observed_live_data.py`. `shadow-v1` is deliberately left unedited.
 
+Of those three, only the wording is urgent. `replay` re-decides stored scores
+under a new policy, so thresholds and rule scope can be settled from a shadow
+run's own data. It never calls Jev, so it can never produce the scores a
+different wording would have given: a broken question spoils a month of that
+column irrecoverably. `shadow-v2` therefore reworks `evidence_sufficiency`
+before any long run, and rule 5's scope waits. See
+`docs/question-rewording.md`.
+
 Fixtures cannot be used to pick thresholds. Fixture scores are invented, so the
 distribution they form says nothing about how Jev's output is actually
 distributed. Treating a passing fixture suite as threshold validation would be

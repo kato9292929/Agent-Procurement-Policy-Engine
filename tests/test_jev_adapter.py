@@ -171,8 +171,19 @@ class JevAdapterTests(unittest.TestCase):
     # -- cost --
 
     def test_cost_stays_null_without_a_configured_price(self):
-        judgment = self.judge(Transport(good_body())).evaluate(self.candidate, self.policy)
+        """A missing price leaves the cost null rather than guessing a rate."""
+        unpriced = support.policy(
+            jev={"model": "jev-latest", "timeout_ms": 100, "retries": 0},
+            pricing={"input_per_mtok_usd": None, "output_per_mtok_usd": None, "source": None},
+        )
+        judgment = self.judge(Transport(good_body())).evaluate(self.candidate, unpriced)
         self.assertIsNone(judgment.usage["cost_usd"])
+
+    def test_cost_is_filled_in_from_the_configured_price(self):
+        """shadow-v1 now carries a real rate, so a live judgment is costed."""
+        judgment = self.judge(Transport(good_body())).evaluate(self.candidate, self.policy)
+        expected = 850 * self.policy.pricing["input_per_mtok_usd"] / 1_000_000
+        self.assertAlmostEqual(judgment.usage["cost_usd"], expected)
 
     def test_cost_is_computed_when_a_price_is_configured(self):
         usage = apply_pricing(

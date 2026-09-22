@@ -52,6 +52,7 @@ class Policy:
     pricing: dict[str, Any] = field(default_factory=dict)
     ledger: dict[str, Any] = field(default_factory=dict)
     report: dict[str, Any] = field(default_factory=dict)
+    questions: dict[str, Any] = field(default_factory=dict)
 
     @property
     def repurchase_window_seconds(self) -> float:
@@ -89,6 +90,7 @@ class Policy:
             pricing=dict(data.get("pricing") or {}),
             ledger=dict(data.get("ledger") or {}),
             report=dict(data.get("report") or {}),
+            questions=dict(data.get("questions") or {}),
         )
 
     @classmethod
@@ -103,9 +105,17 @@ class Policy:
             raise InputError(f"policy {path} is not valid JSON: {exc}") from exc
 
     def as_record(self) -> dict[str, Any]:
-        """The `policy` block embedded in every decision record."""
+        """The `policy` block embedded in every decision record.
+
+        `question_set` identifies the exact wording the scores were produced
+        under. Without it, comparing a score across a rewording would silently
+        compare two different questions.
+        """
+        from .judges.base import question_set_hash
+
         return {
             "policy_version": self.policy_version,
             "thresholds": dict(self.thresholds),
             "exact_repurchase_window": self.exact_repurchase_window,
+            "question_set": question_set_hash(self),
         }

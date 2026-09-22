@@ -30,10 +30,10 @@
     "_shutdown_drain_note": "How long a shutting-down process may spend flushing queued candidates. Anything left is counted and logged, never silently lost."
   },
   "pricing": {
-    "input_per_mtok_usd": null,
-    "output_per_mtok_usd": null,
-    "source": null,
-    "_pricing_note": "TODO: still unset, so usage.cost_usd stays null rather than guessed. Token counts DO arrive (~690-800 in, ~145 out per judgment, confirmed 2026-09-22), so filling both rates is all that is needed. The rate is on the Usage page of the TypeSafe console; record its source here."
+    "input_per_mtok_usd": 0.042,
+    "output_per_mtok_usd": 0.0,
+    "source": "TypeSafe AI documentation, relayed by the repository owner and recorded 2026-09-22: USD 0.042 per 1M input tokens, output tokens free. Not independently verified from here - docs.typesafe.ai is blocked by the sandbox egress policy. Re-check against the Usage page in the TypeSafe console before relying on a cost figure.",
+    "_worked_example": "About 750 input tokens per judgment gives roughly USD 0.0000315 each, so 1,000 judgments cost about USD 0.03."
   },
   "ledger": {
     "backend": "jsonl",

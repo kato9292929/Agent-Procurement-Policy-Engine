@@ -7,14 +7,20 @@ checks, the aggregation, or the ledger.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Mapping, Protocol
 
+from ..canonical import hash_json
 from ..models import Candidate, SemanticJudgment
 from ..policy import Policy
 
 # The four narrow questions of chapter 4. Price fairness, counterparty
 # trustworthiness and safety are deliberately absent: without comparison data
 # a model's answer to those would be a guess recorded as evidence.
+#
+# This is the shadow-v1 wording. A policy may override any question through its
+# `questions` block, which is what makes a rewording a new `policy_version`
+# rather than an edit: scores produced by different wordings are not
+# comparable, so the wording has to be versioned alongside the thresholds.
 QUESTION_SPECS: dict[str, dict[str, object]] = {
     "task_fit": {
         "positive": "fits",
@@ -62,6 +68,36 @@ QUESTION_SPECS: dict[str, dict[str, object]] = {
         },
     },
 }
+
+
+def resolve_questions(policy: Policy | None = None) -> dict[str, dict[str, Any]]:
+    """The question set this policy asks, defaults merged with its overrides.
+
+    A policy overrides a question by name; anything it leaves out keeps the
+    shadow-v1 wording above.
+    """
+    resolved = {name: dict(spec) for name, spec in QUESTION_SPECS.items()}
+    overrides: Mapping[str, Any] = (policy.questions if policy else {}) or {}
+    for name, override in overrides.items():
+        if name.startswith("_") or name not in resolved:
+            continue  # notes and unknown names are ignored, never invented
+        if not isinstance(override, dict):
+            continue
+        merged = dict(resolved[name])
+        for field in ("positive", "instructions", "criteria"):
+            if field in override:
+                merged[field] = override[field]
+        resolved[name] = merged
+    return resolved
+
+
+def question_set_hash(policy: Policy | None = None) -> str:
+    """Identifies the exact wording a score was produced under.
+
+    Recorded on every judgment: comparing `evidence_sufficiency` across a
+    rewording is only meaningful if each score says which wording produced it.
+    """
+    return hash_json(resolve_questions(policy))
 
 
 class ProcurementJudge(Protocol):

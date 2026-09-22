@@ -1,15 +1,15 @@
 {
-  "policy_version": "shadow-v2-candidate",
+  "policy_version": "shadow-v2",
   "provisional": true,
-  "_provisional_note": "NOT FOR DEPLOYMENT. This exists to be replayed against, not to be run. It differs from shadow-v1 in one number: confidence_min, lowered because the live run of 2026-09-22 showed 11 of 20 observed confidences below 0.80, which sent 4 of 5 candidates to REVIEW including the clean PAY case. 0.50 is the lowest value that recovers that case on this sample; it is NOT a calibrated figure. Five candidates in one run cannot calibrate a threshold, and Jev drifts about 0.05 between runs. Choosing a real value still needs human labels, per docs/labeling.md. Replay with: guard replay --policy policies/shadow-v2-candidate.json",
+  "_provisional_note": "Differs from shadow-v1 in ONE thing: the evidence_sufficiency wording. Thresholds are deliberately identical, so a comparison between the two isolates the effect of the rewording. The thresholds are still the untuned shadow-v1 values; shadow-v2-candidate is the separate experiment that varies confidence_min.",
   "thresholds": {
     "task_fit_min": 0.8,
     "incremental_value_min": 0.7,
     "duplication_risk_max": 0.3,
     "evidence_sufficiency_min": 0.7,
-    "confidence_min": 0.5
+    "confidence_min": 0.8
   },
-  "_confidence_min_note": "confidence_min is the most volatile knob: set it too high and nearly everything becomes REVIEW, too low and REVIEW never fires. Check the REVIEW share in the first shadow run and report it if it lands at either extreme.",
+  "_confidence_min_note": "MEASURED WRONG, 2026-09-22. The live run found 11 of 20 real confidences below 0.80 (median 0.77, min 0.14), which sent 4 of 5 candidates to REVIEW including the clean PAY case. Kept as-is on purpose: a threshold change means a new policy_version, never an edit, so past decisions stay reproducible. Compare with guard replay --policy policies/shadow-v2-candidate.json, and see docs/jev-live-verification.md.",
   "exact_repurchase_window": "PT24H",
   "max_input_bytes": 262144,
   "retry_detection": "idempotency_key",
@@ -17,7 +17,8 @@
   "jev": {
     "model": "jev-latest",
     "timeout_ms": 8000,
-    "retries": 2
+    "retries": 2,
+    "_latency_note": "Measured 2026-09-22: p50 747ms, max 774ms per judgment. timeout_ms 8000 is comfortable. If the synchronous hook is ever used, ~0.75s is what it would add to the payment path, which is why async is the default."
   },
   "hook": {
     "mode": "async",
@@ -46,5 +47,16 @@
     "orphan_after": "PT15M",
     "_orphan_note": "A candidate_observed with no guard_evaluated older than this counts as orphaned: the observation was recorded but its judgment never was."
   },
-  "_known_unfixed": "Two problems this file does NOT address. (1) Rule 5 gates on questions that are not deciding the outcome: cand_pay_clean clears every score threshold yet is held for low confidence in task_fit and evidence_sufficiency, neither of which would have changed the verdict. Fixing that means changing the aggregation, not a threshold. (2) evidence_sufficiency scored below 0.80 on every candidate including the well-specified one, with low confidence in its own answer, which suggests the question is read differently than intended. Rewording it requires re-running the live check."
+  "questions": {
+    "_note": "Only the questions named here differ from the shadow-v1 wording in src/spend_guard/judges/base.py. The wording is versioned with the policy because scores produced under different wordings are not comparable; every decision records policy.question_set, a hash of the exact set used.",
+    "evidence_sufficiency": {
+      "positive": "provides",
+      "_why": "shadow-v1 asked 'is there enough information to judge whether this purchase is needed?'. Measured 2026-09-22, that scored below 0.80 on every candidate (0.76/0.43/0.34/0.29/0.00) with low confidence in its own answers (0.51/0.14/0.32/0.43/1.00), including the candidate written to be well specified. It is abstract and self-referential: Jev receives only the candidate, so 'is the evidence sufficient' has no fixed referent and the answer sticks low. This asks something answerable from the input alone.",
+      "instructions": "Judging only from the service description, does this service provide each item listed in the task's required data? Answer from the description and the required-data list alone; do not consider price, provider reputation, or whether the purchase is worthwhile.",
+      "criteria": {
+        "provides": "The description covers every item in the required-data list.",
+        "does_not_provide": "The description leaves at least one required item uncovered."
+      }
+    }
+  }
 }

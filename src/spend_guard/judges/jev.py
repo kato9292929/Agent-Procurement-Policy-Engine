@@ -33,7 +33,7 @@ from ..models import (
     SemanticJudgment,
 )
 from ..policy import Policy
-from .base import QUESTION_SPECS
+from .base import resolve_questions
 
 DEFAULT_URL = "https://api.typesafe.ai/v1/systemone"
 DEFAULT_MODEL = "jev-latest"
@@ -81,8 +81,8 @@ def project_state(candidate: Candidate) -> dict[str, Any]:
     }
 
 
-def build_questions() -> dict[str, dict[str, Any]]:
-    """One `choice` question per signal.
+def build_questions(policy: Policy | None = None) -> dict[str, dict[str, Any]]:
+    """One `choice` question per signal, with the policy's wording.
 
     The choice primitive is used rather than a plain yes/no because chapter 7
     requires a confidence per question, and only choice and score answers carry
@@ -94,8 +94,12 @@ def build_questions() -> dict[str, dict[str, Any]]:
             "instructions": spec["instructions"],
             "criteria": dict(spec["criteria"]),  # type: ignore[arg-type]
         }
-        for name, spec in QUESTION_SPECS.items()
+        for name, spec in resolve_questions(policy).items()
     }
+
+
+def positive_option(name: str, policy: Policy | None = None) -> str:
+    return str(resolve_questions(policy)[name]["positive"])
 
 
 def load_api_key(env: Mapping[str, str] | None = None) -> str:
@@ -141,7 +145,7 @@ def _probability(value: Any, where: str) -> float:
     return number
 
 
-def parse_response(body: Any) -> SemanticJudgment:
+def parse_response(body: Any, policy: Policy | None = None) -> SemanticJudgment:
     """Validate Jev's reply into a SemanticJudgment, or raise INVALID_RESPONSE."""
     if not isinstance(body, dict):
         raise ProviderError("Jev returned an unusable answer", kind="INVALID_RESPONSE", detail="root")
@@ -159,7 +163,7 @@ def parse_response(body: Any) -> SemanticJudgment:
                 "Jev returned an unusable answer", kind="INVALID_RESPONSE", detail=f"answers.{name}"
             )
         probabilities = answer.get("probabilities")
-        positive = QUESTION_SPECS[name]["positive"]
+        positive = positive_option(name, policy)
         if not isinstance(probabilities, dict) or positive not in probabilities:
             raise ProviderError(
                 "Jev returned an unusable answer",
@@ -231,7 +235,7 @@ class JevProcurementJudge:
         model = str(settings.get("model") or DEFAULT_MODEL)
 
         payload = json.dumps(
-            {"state": project_state(candidate), "model": model, "questions": build_questions()},
+            {"state": project_state(candidate), "model": model, "questions": build_questions(policy)},
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
@@ -276,7 +280,7 @@ class JevProcurementJudge:
                 raise ProviderError(
                     "Jev returned invalid JSON", kind="INVALID_RESPONSE", detail=str(exc)
                 ) from exc
-            judgment = parse_response(decoded)
+            judgment = parse_response(decoded, policy)
             return SemanticJudgment(
                 status=judgment.status,
                 model=judgment.model or model,
