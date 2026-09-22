@@ -11,6 +11,20 @@ The test suite that checks these assumptions exists and is ready to run. Until
 someone runs it with a key, treat this page as *what the code believes*, not
 as verified behaviour.
 
+## Quickest way to run it: no installs
+
+`pytest` is only the runner; the checks themselves need nothing but the
+standard library. If pip or pytest are not available, use the script:
+
+```bash
+TYPESAFE_API_KEY='...' python3 scripts/jev_live_check.py
+```
+
+Works on Python 3.9+, uses 7 API calls (capped at 20, `--max-calls` to change),
+and prints a PASS/FAIL line per check plus the observed scores and latency.
+Add `--auth proxy` when a proxy attaches the credential instead of this
+process. Nothing it prints or writes contains the key.
+
 ## Getting the credential to the tests
 
 Two routes. In a sandboxed environment, **prefer the proxy route**: the key
