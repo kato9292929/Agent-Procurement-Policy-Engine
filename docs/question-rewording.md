@@ -73,11 +73,25 @@ the v1 wording, so the two experiments do not contaminate each other.
 
 ```bash
 TYPESAFE_API_KEY='...' python3 scripts/jev_question_ab.py \
-    --before policies/shadow-v1.json \
-    --after  policies/shadow-v2.json \
-    --candidates fixtures/candidates/candidates.jsonl \
-    --candidates fixtures/candidates/aa-routes.jsonl
+    --candidates fixtures/candidates/aa-routes.jsonl --max-calls 14
 ```
+
+`fixtures/candidates/aa-routes.jsonl` holds seven routes the agent really
+pays for, built from `config/spend-guard-endpoints.json` in the
+`x402-Autonomous-Agent-` repository. They split into two groups, and the
+script keeps them apart:
+
+| group | n | why |
+|---|---|---|
+| `answerable` | 3 | Mode A states what it needs from these, so "does the description provide each required item" has something to check |
+| `no_required_data` | 4 | Mode B and Mode C buy unconditionally and state no per-route need, so `required_data` is empty and the question has nothing to check against |
+
+**The 0.60 rule is applied to the `answerable` group only.** Judging a
+question by candidates where it is structurally unanswerable would retire it
+for the wrong reason. The other group is still asked and still reported,
+because how the model behaves on an empty `required_data` is exactly what
+production looks like today: 16 of the agent's 20 routes have no description
+beyond their name, and 17 have no stated need.
 
 It asks the same candidates under both wordings and reports the score and
 confidence spread for each, per candidate and in aggregate. Calls are capped;

@@ -68,6 +68,18 @@ class Budget:
         return body
 
 
+def group_of(raw: dict) -> str:
+    """Candidates may carry `_ab_group` to be reported apart from the rest.
+
+    A question that cannot be answered from the input at all - `required_data`
+    empty, so "does it provide each required item" has nothing to check - would
+    drag a single median down and could retire a question for the wrong reason.
+    Such candidates are still asked and still reported; they are just not mixed
+    into the group the decision rule is applied to.
+    """
+    return str(raw.get("_ab_group") or "all")
+
+
 def load_candidates(paths: list[Path]) -> dict[str, dict]:
     found: dict[str, dict] = {}
     for path in paths:
@@ -154,16 +166,39 @@ def main() -> int:
     results_after = run(after, candidates, budget, key, auth)
 
     q = args.question
-    scores_b = [j.scores[q] for j in results_before.values()]
-    scores_a = [j.scores[q] for j in results_after.values()]
-    conf_b = [j.confidence[q] for j in results_before.values()]
-    conf_a = [j.confidence[q] for j in results_after.values()]
+    groups: dict[str, list[str]] = {}
+    for name, raw in candidates.items():
+        groups.setdefault(group_of(raw), []).append(name)
 
-    print(f"\n{BOLD}{q}{RESET}")
-    print(f"  score       before  {spread(scores_b)}")
-    print(f"              after   {spread(scores_a)}")
-    print(f"  confidence  before  {spread(conf_b)}")
-    print(f"              after   {spread(conf_a)}")
+    def stats(names, source, field):
+        picked = [getattr(source[n], field)[q] for n in names]
+        return picked
+
+    per_group = {}
+    for group, names in sorted(groups.items()):
+        cb = stats(names, results_before, "confidence")
+        ca = stats(names, results_after, "confidence")
+        sb = stats(names, results_before, "scores")
+        sa = stats(names, results_after, "scores")
+        per_group[group] = {
+            "n": len(names),
+            "median_confidence": {"before": statistics.median(cb), "after": statistics.median(ca)},
+            "median_score": {"before": statistics.median(sb), "after": statistics.median(sa)},
+        }
+        print(f"\n{BOLD}{q} - group `{group}` (n={len(names)}){RESET}")
+        print(f"  score       before  {spread(sb)}")
+        print(f"              after   {spread(sa)}")
+        print(f"  confidence  before  {spread(cb)}")
+        print(f"              after   {spread(ca)}")
+
+    # The rule is applied to the group where the question is fairly testable.
+    decision_group = "answerable" if "answerable" in groups else sorted(groups)[0]
+    names = groups[decision_group]
+    conf_b = stats(names, results_before, "confidence")
+    conf_a = stats(names, results_after, "confidence")
+    if len(groups) > 1:
+        print(f"\n  {DIM}decision rule applied to group `{decision_group}` "
+              f"(n={len(names)}); other groups reported for context only{RESET}")
 
     median_after = statistics.median(conf_a) if conf_a else 0.0
     improved = median_after > (statistics.median(conf_b) if conf_b else 0.0)
@@ -178,11 +213,12 @@ def main() -> int:
               f"service.description all present). Implementation needs approval.")
 
     print(f"\n{BOLD}per candidate{RESET}  {DIM}(reported, never asserted){RESET}")
-    print(f"  {'candidate':28} {'score b->a':>16}   {'confidence b->a':>18}")
-    for name in candidates:
-        b, a = results_before[name], results_after[name]
-        print(f"  {name:28} {b.scores[q]:6.2f} -> {a.scores[q]:5.2f}   "
-              f"{b.confidence[q]:8.2f} -> {a.confidence[q]:7.2f}")
+    print(f"  {'candidate':30} {'group':18} {'score b->a':>15}  {'confidence b->a':>17}")
+    for group, names in sorted(groups.items()):
+        for name in names:
+            b, a = results_before[name], results_after[name]
+            print(f"  {name:30} {group:18} {b.scores[q]:6.2f} -> {a.scores[q]:4.2f}  "
+                  f"{b.confidence[q]:8.2f} -> {a.confidence[q]:6.2f}")
 
     ordered = sorted(budget.latencies)
     payload = {
@@ -195,6 +231,8 @@ def main() -> int:
                   "question": resolve_questions(after)[q]},
         "question": q,
         "confidence_floor": CONFIDENCE_FLOOR,
+        "decision_group": decision_group,
+        "per_group": per_group,
         "median_confidence": {"before": statistics.median(conf_b), "after": median_after},
         "meets_floor": verdict_ok,
         "per_candidate": {
