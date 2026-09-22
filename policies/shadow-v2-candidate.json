@@ -1,15 +1,15 @@
 {
-  "policy_version": "shadow-v1",
+  "policy_version": "shadow-v2-candidate",
   "provisional": true,
-  "_provisional_note": "These thresholds are PROVISIONAL. Jev's 0-1 outputs are calibrated probabilities, but no threshold here has been checked against this workload's real score distribution, and fixtures cannot supply one because fixture scores are invented. Do not read them as tuned. Procedure for replacing them: run shadow mode, collect human_feedback, then use `guard report --distribution` and `guard replay --policy <candidate>` to compare. A change means a NEW policy_version, never an edit to this file. See docs/design.md section 'Thresholds'.",
+  "_provisional_note": "NOT FOR DEPLOYMENT. This exists to be replayed against, not to be run. It differs from shadow-v1 in one number: confidence_min, lowered because the live run of 2026-09-22 showed 11 of 20 observed confidences below 0.80, which sent 4 of 5 candidates to REVIEW including the clean PAY case. 0.50 is the lowest value that recovers that case on this sample; it is NOT a calibrated figure. Five candidates in one run cannot calibrate a threshold, and Jev drifts about 0.05 between runs. Choosing a real value still needs human labels, per docs/labeling.md. Replay with: guard replay --policy policies/shadow-v2-candidate.json",
   "thresholds": {
     "task_fit_min": 0.8,
     "incremental_value_min": 0.7,
     "duplication_risk_max": 0.3,
     "evidence_sufficiency_min": 0.7,
-    "confidence_min": 0.8
+    "confidence_min": 0.5
   },
-  "_confidence_min_note": "MEASURED WRONG, 2026-09-22. The live run found 11 of 20 real confidences below 0.80 (median 0.77, min 0.14), which sent 4 of 5 candidates to REVIEW including the clean PAY case. Kept as-is on purpose: a threshold change means a new policy_version, never an edit, so past decisions stay reproducible. Compare with guard replay --policy policies/shadow-v2-candidate.json, and see docs/jev-live-verification.md.",
+  "_confidence_min_note": "confidence_min is the most volatile knob: set it too high and nearly everything becomes REVIEW, too low and REVIEW never fires. Check the REVIEW share in the first shadow run and report it if it lands at either extreme.",
   "exact_repurchase_window": "PT24H",
   "max_input_bytes": 262144,
   "retry_detection": "idempotency_key",
@@ -17,8 +17,7 @@
   "jev": {
     "model": "jev-latest",
     "timeout_ms": 8000,
-    "retries": 2,
-    "_latency_note": "Measured 2026-09-22: p50 747ms, max 774ms per judgment. timeout_ms 8000 is comfortable. If the synchronous hook is ever used, ~0.75s is what it would add to the payment path, which is why async is the default."
+    "retries": 2
   },
   "hook": {
     "mode": "async",
@@ -33,7 +32,7 @@
     "input_per_mtok_usd": null,
     "output_per_mtok_usd": null,
     "source": null,
-    "_pricing_note": "TODO: still unset, so usage.cost_usd stays null rather than guessed. Token counts DO arrive (~690-800 in, ~145 out per judgment, confirmed 2026-09-22), so filling both rates is all that is needed. The rate is on the Usage page of the TypeSafe console; record its source here."
+    "_pricing_note": "TODO: unset, so usage.cost_usd stays null rather than being guessed. Fill both rates and cite the TypeSafe price list in `source` before reading any cost figure from `guard report`."
   },
   "ledger": {
     "backend": "jsonl",
@@ -46,5 +45,6 @@
   "report": {
     "orphan_after": "PT15M",
     "_orphan_note": "A candidate_observed with no guard_evaluated older than this counts as orphaned: the observation was recorded but its judgment never was."
-  }
+  },
+  "_known_unfixed": "Two problems this file does NOT address. (1) Rule 5 gates on questions that are not deciding the outcome: cand_pay_clean clears every score threshold yet is held for low confidence in task_fit and evidence_sufficiency, neither of which would have changed the verdict. Fixing that means changing the aggregation, not a threshold. (2) evidence_sufficiency scored below 0.80 on every candidate including the well-specified one, with low confidence in its own answer, which suggests the question is read differently than intended. Rewording it requires re-running the live check."
 }

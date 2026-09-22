@@ -352,8 +352,17 @@ could use — `summary` is what lets Jev reason about what is already held.
 
 ## Thresholds
 
-**Every threshold in `policies/shadow-v1.json` is provisional.** They are the
-values the instructions suggested, not values derived from this workload.
+**Every threshold in `policies/shadow-v1.json` is provisional, and one is now
+known to be wrong.** They are the values the instructions suggested, not
+values derived from this workload.
+
+The live run of 2026-09-22 found 11 of 20 real confidences below
+`confidence_min` (0.80), which sends 4 of 5 candidates to `REVIEW` including
+the clean `PAY` case. Two further problems sit underneath it: rule 5 gates on
+questions that are not deciding the outcome, and `evidence_sufficiency` scores
+low on every candidate with low confidence in its own answer. See
+`docs/jev-live-verification.md`; the observed answers are replayed by
+`tests/test_observed_live_data.py`. `shadow-v1` is deliberately left unedited.
 
 Fixtures cannot be used to pick thresholds. Fixture scores are invented, so the
 distribution they form says nothing about how Jev's output is actually

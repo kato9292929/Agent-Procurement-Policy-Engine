@@ -72,7 +72,13 @@ def _load_jsonl(path: str) -> Iterator[Any]:
 
 
 def _policy(args: argparse.Namespace) -> Policy:
-    return Policy.load(args.policy)
+    """The policy to use, letting a subcommand's own --policy win.
+
+    `guard replay --policy <other>` is how a candidate policy gets compared
+    against what is recorded, so --policy has to be accepted after the
+    subcommand as well as before it.
+    """
+    return Policy.load(getattr(args, "policy_override", None) or args.policy)
 
 
 def _ledger(args: argparse.Namespace, policy: Policy | None = None) -> Ledger:
@@ -277,11 +283,16 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.set_defaults(handler=cmd_evaluate)
 
     replay_cmd = sub.add_parser("replay", help="re-aggregate recorded judgments under a policy")
+    replay_cmd.add_argument(
+        "--policy", dest="policy_override",
+        help="policy to re-decide under; defaults to the one the ledger was written with",
+    )
     replay_cmd.set_defaults(handler=cmd_replay)
 
     report_cmd = sub.add_parser("report", help="shadow-mode metrics")
     report_cmd.add_argument("--distribution", action="store_true", help="include raw score spread")
     report_cmd.add_argument("--verify-chain", action="store_true")
+    report_cmd.add_argument("--policy", dest="policy_override")
     report_cmd.set_defaults(handler=cmd_report)
 
     feedback = sub.add_parser("feedback", help="append a human label to a decision")

@@ -1,0 +1,29 @@
+{
+  "_comment": "REAL Jev answers, recorded 2026-09-22 from api.typesafe.ai with model jev-1.13.0, by scripts/jev_live_check.py against fixtures/candidates/candidates.jsonl. Unlike answers.json these numbers were not invented. They exist so the observed distribution can be replayed through the aggregation; they are NOT a basis for asserting how the model behaves, since Jev drifts about 0.05 between runs and this is a single sample of five.",
+  "_observed_latency_ms": {"p50": 747, "max": 774},
+  "cand_pay_clean": {
+    "task_fit": 0.89, "incremental_value": 1.0, "duplication_risk": 0.03, "evidence_sufficiency": 0.76,
+    "confidence": {"task_fit": 0.77, "incremental_value": 1.0, "duplication_risk": 0.95, "evidence_sufficiency": 0.51},
+    "model": "jev-1.13.0", "usage": {"input_tokens": 799, "output_tokens": 145}
+  },
+  "cand_semantic_dupe": {
+    "task_fit": 0.98, "incremental_value": 0.83, "duplication_risk": 0.71, "evidence_sufficiency": 0.43,
+    "confidence": {"task_fit": 0.96, "incremental_value": 0.67, "duplication_risk": 0.42, "evidence_sufficiency": 0.14},
+    "model": "jev-1.13.0", "usage": {"input_tokens": 786, "output_tokens": 145}
+  },
+  "cand_exact_repurchase": {
+    "task_fit": 0.98, "incremental_value": 0.3, "duplication_risk": 0.84, "evidence_sufficiency": 0.34,
+    "confidence": {"task_fit": 0.96, "incremental_value": 0.4, "duplication_risk": 0.68, "evidence_sufficiency": 0.32},
+    "model": "jev-1.13.0", "usage": {"input_tokens": 784, "output_tokens": 146}
+  },
+  "cand_off_task": {
+    "task_fit": 0.0, "incremental_value": 0.17, "duplication_risk": 0.01, "evidence_sufficiency": 0.29,
+    "confidence": {"task_fit": 1.0, "incremental_value": 0.65, "duplication_risk": 0.99, "evidence_sufficiency": 0.43},
+    "model": "jev-1.13.0", "usage": {"input_tokens": 695, "output_tokens": 148}
+  },
+  "cand_thin_evidence": {
+    "task_fit": 0.78, "incremental_value": 0.94, "duplication_risk": 0.02, "evidence_sufficiency": 0.0,
+    "confidence": {"task_fit": 0.55, "incremental_value": 0.88, "duplication_risk": 0.97, "evidence_sufficiency": 1.0},
+    "model": "jev-1.13.0", "usage": {"input_tokens": 690, "output_tokens": 145}
+  }
+}
