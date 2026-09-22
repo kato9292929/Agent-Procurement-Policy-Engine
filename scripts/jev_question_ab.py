@@ -192,7 +192,8 @@ def main() -> int:
         print(f"              after   {spread(ca)}")
 
     # The rule is applied to the group where the question is fairly testable.
-    decision_group = "answerable" if "answerable" in groups else sorted(groups)[0]
+    decision_group = next((g for g in ("answerable", "code_task") if g in groups),
+                          sorted(groups)[0])
     names = groups[decision_group]
     conf_b = stats(names, results_before, "confidence")
     conf_a = stats(names, results_after, "confidence")
